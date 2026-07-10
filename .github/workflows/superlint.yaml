@@ -30,7 +30,7 @@ jobs:
           npx prettier --write "**/*.md"
 
       - name: Commit Prettier changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "style(docs): format documentation with Prettier"
           branch: ${{ github.head_ref }}
