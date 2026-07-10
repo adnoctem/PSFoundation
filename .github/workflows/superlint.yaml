@@ -36,7 +36,7 @@ jobs:
           branch: ${{ github.head_ref }}
 
       - name: Superlinter
-        uses: super-linter/super-linter@v7.1.0
+        uses: super-linter/super-linter@v8.7.0
         env:
           DEFAULT_BRANCH: main
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
