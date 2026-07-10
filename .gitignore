@@ -1,0 +1,23 @@
+#######################################
+# EDITORS
+#######################################
+
+# IntelliJ IDEA
+.idea/*
+!.idea/dataSources.xml
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Distribution folder
+dist/*
+build/*
+
+# temporary files
+secrets/*
+dist/*
+build/*
