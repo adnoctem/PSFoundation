@@ -7,13 +7,13 @@
 .DESCRIPTION
   Copies or symlinks the src/ directory into the user's PowerShell Modules path
   so that the module can be imported with Import-Module PSFoundation from any
-  session. By default, files are copied. Use -Symlink to create a directory
+  session. By default, files are copied. Use -SymbolicLink to create a directory
   junction instead (instant updates, suitable for active development).
 
   The module version is read from src/PSFoundation.psd1 and used to create the
   versioned module folder. Use -Undo to remove a previously installed copy.
 
-.PARAMETER Symlink
+.PARAMETER SymbolicLink
   Create a directory junction instead of copying files. The junction points back
   to the src/ directory so changes take effect immediately without reinstalling.
 
@@ -32,7 +32,7 @@
   Copies src/ into $env:USERPROFILE\Documents\PowerShell\Modules\PSFoundation\<version>\.
 
 .EXAMPLE
-  PS> ./install.ps1 -Symlink
+  PS> ./install.ps1 -SymbolicLink
   Creates a junction so that module changes are reflected immediately.
 
 .EXAMPLE
@@ -49,7 +49,7 @@
 
 [CmdletBinding(SupportsShouldProcess = $true)]
 param (
-  [switch]$Symlink,
+  [switch]$SymbolicLink,
 
   [switch]$Undo,
 
@@ -146,9 +146,13 @@ if (-not (Test-Path -LiteralPath $parentPath)) {
   New-Item -Path $parentPath -ItemType Directory -Force | Out-Null
 }
 
-if ($Symlink) {
+if (-not (Test-Path -LiteralPath $installPath)) {
+  New-Item -Path $installPath -ItemType Directory -Force | Out-Null
+}
+
+if ($SymbolicLink) {
   if (-not $IsWindows -and $env:OS -ne 'Windows_NT') {
-    throw 'Symlink installation is only supported on Windows (directory junctions).'
+    throw 'SymbolicLink installation is only supported on Windows (directory junctions).'
   }
 
   if ($PSCmdlet.ShouldProcess($srcPath, "Create junction -> $installPath")) {

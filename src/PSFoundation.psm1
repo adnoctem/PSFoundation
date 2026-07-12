@@ -174,7 +174,12 @@ $publicFunctions = @(
   'Test-WindowsUpdateRebootRequired',
   'Get-WindowsUpdateConfiguration',
   'Get-MSStoreUpdate',
-  'Install-MSStoreUpdate'
+  'Install-MSStoreUpdate',
+
+  # maintenance.ps1
+  'Get-PSModule',
+  'Remove-PSModule',
+  'Add-PSModule'
 )
 
 Export-ModuleMember -Function $publicFunctions -Alias $publicAliases

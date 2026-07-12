@@ -20,6 +20,7 @@
     test, tests, pester                 .ps1   test.ps1
     release, publish                 .ps1   release.ps1
     install                           .ps1   install.ps1
+    prune                             .ps1   prune.ps1
 
   All remaining positional and named arguments after Command are forwarded to
   the target script.
@@ -48,6 +49,10 @@
   PS> .\PSFoundation.ps1 release -DryRun
   Runs tools\release.ps1 -DryRun.
 
+.EXAMPLE
+  PS> .\PSFoundation.ps1 prune -WhatIf
+  Runs tools\prune.ps1 -WhatIf.
+
 .LINK
   https://github.com/adnoctem/PSFoundation
 
@@ -64,7 +69,7 @@ param (
 )
 
 if (-not $Command) {
-  Write-Error 'A command is required. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, release, publish'
+  Write-Error 'A command is required. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, release, publish, install, prune'
   exit 1
 }
 
@@ -88,13 +93,14 @@ $scriptMap = @{
   'release' = 'release'
   'publish' = 'release'
   'install' = 'install'
+  'prune' = 'prune'
 }
 
 $commandKey = $Command.ToLowerInvariant()
 $scriptName = $scriptMap[$commandKey]
 
 if (-not $scriptName) {
-  Write-Error "Unknown command '$Command'. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, release, publish, install"
+  Write-Error "Unknown command '$Command'. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, release, publish, install, prune"
   exit 1
 }
 

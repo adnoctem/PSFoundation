@@ -57,18 +57,6 @@
     },
     # @{ ModuleName = "PSReadLine"; ModuleVersion = '2.4.5' },
     @{
-      ModuleName = "PSWritePDF"
-      ModuleVersion = '0.0.20'
-    },
-    @{
-      ModuleName = "PSWriteOffice"
-      ModuleVersion = '0.2.0'
-    },
-    @{
-      ModuleName = "Transferetto"
-      ModuleVersion = '1.0.0'
-    },
-    @{
       ModuleName = "Pester"
       ModuleVersion = '5.0.0'
     }
@@ -185,7 +173,10 @@
     'Get-WindowsBootEvent',
     'Get-WindowsPowerShellEvent',
     'Get-WindowsScheduledTaskEvent',
-    'Get-WindowsSysmonEvent'
+    'Get-WindowsSysmonEvent',
+    'Get-PSModule',
+    'Remove-PSModule',
+    'Add-PSModule'
   )
 
   # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export. (none)

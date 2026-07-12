@@ -13,13 +13,24 @@ param(
   [switch]$Force
 )
 
+# ---- Source the module maintenance functions (bypasses Test-ModuleManifest) --
+$repoRoot = Split-Path -Path $PSScriptRoot -Parent
+$maintenancePath = Join-Path -Path $repoRoot -ChildPath 'src/maintenance.ps1'
+if (Test-Path -LiteralPath $maintenancePath -PathType Leaf) {
+  . $maintenancePath
+}
+else {
+  Write-Error "Module source not found: $maintenancePath"
+  exit 1
+}
+
 # ---- Ensure NuGet provider (required by PowerShellGet) ----------------------
 $null = Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction SilentlyContinue
 
 # ---- Configure module -------------------------------------------------------
 $RepositoryRoot = Split-Path -Path $PSScriptRoot -Parent
 $manifestPath = Join-Path -Path $RepositoryRoot -ChildPath 'src/PSFoundation.psd1'
-$manifest = Test-ModuleManifest -Path $manifestPath -ErrorAction Stop
+$manifest = Test-ModuleManifest -Path $manifestPath -ErrorAction SilentlyContinue
 
 Write-Host "Using manifest: $manifest"
 
@@ -57,37 +68,19 @@ foreach ($mod in $manifest.RequiredModules) {
     continue
   }
 
-  # ---- Resolve target version ----
+  # ---- Install ----
+
   if ($exactVer) {
-    $targetVer = $exactVer
+    Add-PSModule -Name $name -Version $exactVer.ToString() -Scope CurrentUser -Force
   }
   elseif ($minVer) {
-    $targetVer = $minVer
+    Add-PSModule -Name $name -MinimumVersion $minVer.ToString() -Scope CurrentUser -Force
   }
   else {
-    $target = Find-Module -Name $name |
-      Sort-Object Version -Descending |
-      Select-Object -First 1
-    if (-not $target) {
-      Write-Host "    -> '$name' not found in gallery." -ForegroundColor Red
-      continue
-    }
-    $targetVer = $target.Version
+    Add-PSModule -Name $name -Scope CurrentUser -Force
   }
 
-  Write-Host "    -> Installing $name $targetVer ..." -ForegroundColor Yellow
-
-  $installParams = @{
-    Name = $name
-    RequiredVersion = $targetVer.ToString()
-    Scope = 'CurrentUser'
-    Force = $true
-    AllowClobber = $true
-    SkipPublisherCheck = $true
-  }
-
-  Install-Module @installParams
-  Write-Host "    -> Installed $name $targetVer" -ForegroundColor Green
+  Write-Host "    -> Installed $name" -ForegroundColor Green
 }
 
 # ---------------------------------------------------------------

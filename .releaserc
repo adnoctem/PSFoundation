@@ -35,6 +35,9 @@
       {
         "assets": [
           {
+            "path": "dist/*.zip"
+          },
+          {
             "path": "dist/*.tar.gz"
           },
           {

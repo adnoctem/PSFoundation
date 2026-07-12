@@ -14,14 +14,14 @@ jobs:
       statuses: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # super-linter needs the full git history to get the
           # list of files that changed across commits
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
 
@@ -30,13 +30,13 @@ jobs:
           npx prettier --write "**/*.md"
 
       - name: Commit Prettier changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "style(docs): format documentation with Prettier"
           branch: ${{ github.head_ref }}
 
       - name: Superlinter
-        uses: super-linter/super-linter@v7.1.0
+        uses: super-linter/super-linter@v8.7.0
         env:
           DEFAULT_BRANCH: main
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

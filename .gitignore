@@ -21,3 +21,6 @@ build/*
 secrets/*
 dist/*
 build/*
+
+# CI artifacts
+ci-modules-*.json

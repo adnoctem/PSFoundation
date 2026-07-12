@@ -1,30 +1,107 @@
-name: Testing
+name: "Testing"
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, next]
   pull_request:
     branches: [main, next]
 
-permissions: read-all
+permissions:
+  contents: write
+  pull-requests: write
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: "${{ github.workflow }}@${{ github.event.pull_request.head.label || github.head_ref || github.ref }}"
 
 jobs:
-  test:
-    name: Test
+  lint:
+    name: Lint
     runs-on: windows-latest
-
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Initialize dependencies
-        run: .\PSFoundation.ps1 init
+      - name: Dump pre-existing module state
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -SkipPublisherCheck
 
-      - name: Format check
+      - name: Check formatting
+        shell: pwsh
         run: .\PSFoundation.ps1 format -Check
 
       - name: Lint
+        shell: pwsh
+        run: .\PSFoundation.ps1 lint
+
+  test:
+    name: Test
+    needs: [lint]
+    strategy:
+      matrix:
+        os: [windows-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dump pre-existing module state
+        shell: pwsh
+        run: |
+          . .\src\maintenance.ps1
+          Get-PSModule -Path ./.github/ci-modules-before.json
+
+      - name: Initialize dependencies
+        shell: pwsh
+        run: .\PSFoundation.ps1 init
+
+      - name: Dump post-init module state
+        shell: pwsh
+        run: |
+          . .\src\maintenance.ps1
+          Get-PSModule -Path ./.github/ci-modules-after.json
+
+      - name: Format check
+        shell: pwsh
+        run: .\PSFoundation.ps1 format -Check
+
+      - name: Lint
+        shell: pwsh
         run: .\PSFoundation.ps1 lint
 
       - name: Test
+        shell: pwsh
         run: .\PSFoundation.ps1 test
+
+  dispatch:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+    needs: [test]
+    steps:
+      - name: Dispatch a release workflow run
+        if: ${{ always() && contains(join(needs.*.result, ','), 'success') }} # ref: https://github.com/actions/runner/issues/1251
+        uses: actions/github-script@v7
+        with:
+          github-token: "${{ env.GITHUB_TOKEN }}"
+          script: |
+            const payload = {
+              run_id: "${{ github.run_id }}",
+              sha: "${{ github.sha }}"
+            }
+
+            console.log("Sending event payload", JSON.stringify(payload, null, 2));
+
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createDispatchEvent({
+              owner,
+              repo,
+              event_type: 'release',
+              client_payload: payload
+            });
