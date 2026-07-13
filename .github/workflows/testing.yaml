@@ -87,7 +87,7 @@ jobs:
     steps:
       - name: Dispatch a release workflow run
         if: ${{ always() && contains(join(needs.*.result, ','), 'success') }} # ref: https://github.com/actions/runner/issues/1251
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: "${{ env.GITHUB_TOKEN }}"
           script: |
