@@ -17,7 +17,7 @@
   .LINK
     https://github.com/adnoctem/winkit/blob/main/lib/data.ps1
   .NOTES
-    Author: Maximilian Gindorfer <info@mvprowess.com>
+    Author: MVProwess <info@mvprowess.com>
     License: MIT
     #>
 
@@ -71,7 +71,7 @@ function Merge-ObjectArrays {
   .LINK
     https://github.com/adnoctem/winkit/blob/main/lib/data.ps1
   .NOTES
-    Author: Maximilian Gindorfer <info@mvprowess.com>
+    Author: MVProwess <info@mvprowess.com>
     License: MIT
   #>
 

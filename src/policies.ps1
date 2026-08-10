@@ -19,7 +19,7 @@ function Resolve-LGPOSource {
     .LINK
       https://github.com/adnoctem/winkit/lib/policies.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -66,7 +66,7 @@ function Test-LGPOSourceAvailability {
     .LINK
       https://github.com/adnoctem/winkit/lib/policies.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -132,7 +132,7 @@ function Install-LGPO {
     .LINK
       https://github.com/adnoctem/winkit/lib/policies.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -219,7 +219,7 @@ function Test-LGPOInstalled {
     .LINK
       https://github.com/adnoctem/winkit/lib/policies.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -254,7 +254,7 @@ function Invoke-LGPO {
     .LINK
       https://github.com/adnoctem/winkit/lib/policies.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

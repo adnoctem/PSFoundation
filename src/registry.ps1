@@ -36,7 +36,7 @@ function ConvertTo-RegistryProviderPath {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -105,7 +105,7 @@ function Resolve-RegistryPath {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -190,7 +190,7 @@ function Get-RegistryKey {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -251,7 +251,7 @@ function Set-RegistryKey {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -319,7 +319,7 @@ function Remove-RegistryKey {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -389,7 +389,7 @@ function Get-RegistryValue {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -445,7 +445,7 @@ function Set-RegistryValue {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -629,7 +629,7 @@ function Remove-RegistryValue {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -709,7 +709,7 @@ function Test-RegistryPath {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -741,7 +741,7 @@ function Test-RegistryValue {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -790,7 +790,7 @@ function Get-RegistryValueKind {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -962,7 +962,7 @@ function Export-RegistryKey {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -1006,7 +1006,7 @@ function Search-RegistryKey {
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

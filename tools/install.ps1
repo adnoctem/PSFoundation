@@ -43,7 +43,7 @@
   https://github.com/adnoctem/PSFoundation
 
 .NOTES
-  Author: Maximilian Gindorfer <info@mvprowess.com>
+  Author: MVProwess <info@mvprowess.com>
   License: MIT
 #>
 

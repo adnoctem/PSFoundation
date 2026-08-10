@@ -12,7 +12,7 @@ function Show-Color {
     .LINK
       https://github.com/adnoctem/winkit/lib/log.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -35,7 +35,7 @@ function Write-Log {
     .LINK
       https://github.com/adnoctem/winkit/lib/log.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

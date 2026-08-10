@@ -98,7 +98,7 @@ Build only a specific format:
 Override the output directory or archive base name:
 
 ```pwsh
-.\PSFoundation.ps1 build -OutputDirectory C:\Temp -Name PSFoundation-v0.1.0
+.\PSFoundation.ps1 build -OutputDirectory C:\Temp -Name PSFoundation-v1.0.0
 ```
 
 ### Pre-Commit Hooks
@@ -133,10 +133,21 @@ with the number of failed tests as its exit code, making it suitable for CI pipe
 
 ### Publishing a Release
 
-Build artifacts, generate SHA256 checksums, and publish the module to the PowerShell Gallery:
+The release pipeline is driven by [semantic-release](../.releaserc) (see [`.github/workflows/release.yaml`](../.github/workflows/release.yaml)):
+
+1. `tools/release.ps1 -Prepare -Version <next>` (invoked by the `@semantic-release/exec` plugin) writes the resolved
+   version into `src/PSFoundation.psd1` — `ModuleVersion`, plus the `Prerelease` key under `PSData` for suffix versions
+   like `1.1.0-beta.1` — rebuilds the `dist/` archives and regenerates `dist/CHECKSUMS_SHA256.txt`. The manifest change
+   is committed as part of the release commit, so the module source, the GitHub release bundles and the PSGallery
+   package always carry the same version.
+2. `tools/release.ps1 -Version <next>` publishes the module from `./src` to the PowerShell Gallery. The module manifest
+   is the single source of truth for the published version; a supplied `-Version` must match it or the publish is
+   aborted.
+
+Running the prepare phase manually:
 
 ```pwsh
-.\PSFoundation.ps1 release -Version 1.0.0 -NuGetApiKey $env:NUGET_API_KEY
+.\PSFoundation.ps1 release -Prepare -Version 1.0.0
 ```
 
 Preview what would happen without making changes:
@@ -296,6 +307,11 @@ repository in separate PRs.
 ### Versioning
 
 The `PSFoundation` PowerShell module declared in [`src/PSFoundation.psd1`](../src/PSFoundation.psd1) follows [SemVer](https://semver.org/).
+
+When cutting a release through the automated pipeline, the version is determined by semantic-release from the
+[conventional commits](#commit-message-format) and written into the manifest automatically by `tools/release.ps1
+-Prepare`; no manual bump is required. A manual bump is only needed when publishing outside the pipeline. The manifest
+must always stay in sync with the highest released version.
 
 Any change to the module source (`src/`), the module manifest, or a change that alters the public API surface of the
 module requires a version bump in the manifest. Documentation-only changes do not require a bump.

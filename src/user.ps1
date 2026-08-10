@@ -9,7 +9,7 @@
     .LINK
       https://github.com/adnoctem/winkit/lib/user.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -39,7 +39,7 @@ function Get-UserSID {
     .LINK
       https://github.com/adnoctem/winkit/lib/user.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

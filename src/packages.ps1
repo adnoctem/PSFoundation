@@ -30,7 +30,7 @@ function Test-PackageAdministrator {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -69,7 +69,7 @@ function New-PackageLifecycleResult {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -104,7 +104,7 @@ function Get-InstalledProgramCount {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -130,7 +130,7 @@ function Get-AppxPackageCount {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -156,7 +156,7 @@ function Get-PackageCount {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -198,7 +198,7 @@ function Get-Win32Program {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -284,7 +284,7 @@ function Find-Win32Program {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -352,7 +352,7 @@ function Install-Win32Program {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -426,7 +426,7 @@ function Uninstall-Win32Program {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -547,7 +547,7 @@ function Get-UPFAppxPackage {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -672,7 +672,7 @@ function Find-UPFAppxPackage {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -748,7 +748,7 @@ function Test-UPFAppxPackageRemovalSafety {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -819,7 +819,7 @@ function Install-UPFAppxPackage {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -896,7 +896,7 @@ function Update-UPFAppxPackage {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -935,7 +935,7 @@ function Repair-UPFAppxPackage {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -996,7 +996,7 @@ function Reset-UPFAppxPackage {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -1058,7 +1058,7 @@ function Uninstall-UPFAppxPackage {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -1148,7 +1148,7 @@ function Uninstall-UPFAppxPackageSet {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -1227,7 +1227,7 @@ function Install-UPFAppxPackageSet {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -1278,7 +1278,7 @@ function Install-Win32ProgramFromWinGet {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -1349,7 +1349,7 @@ function Update-Win32ProgramFromWinGet {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -1422,7 +1422,7 @@ function Uninstall-Win32ProgramFromWinGet {
     .LINK
       https://github.com/adnoctem/winkit/lib/packages.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

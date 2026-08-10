@@ -21,9 +21,10 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     env:
-      GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.ANC_GITHUB_TOKEN }}
+      PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -40,6 +41,7 @@ jobs:
             ]
           extra_plugins: |
             @semantic-release/changelog@6.0.3
+            @semantic-release/exec@7.0.3
             @semantic-release/git@10.0.1
             conventional-changelog-conventionalcommits@8.0.0
 
@@ -47,4 +49,4 @@ jobs:
         if: steps.semantic.outputs.new_release_published == 'true'
         run: |
           Write-Host "Publishing new release: ${{ steps.semantic.outputs.new_release_version }} to PSGallery"
-          .\PSFoundation.ps1 release -NuGetApiKey ${{ secrets.NUGET_API_KEY }}
+          .\PSFoundation.ps1 release -SkipBuild -Version ${{ steps.semantic.outputs.new_release_version }} -NuGetApiKey ${{ env.PSGALLERY_API_KEY }}

@@ -87,7 +87,7 @@ function Get-OSBuildNumber {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -112,7 +112,7 @@ function Get-OSDisplayVersion {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -144,7 +144,7 @@ function Get-OSEdition {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -168,7 +168,7 @@ function Get-OSProductName {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -197,7 +197,7 @@ function Get-OSVersionInfo {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -249,7 +249,7 @@ function Get-SystemMemory {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -300,7 +300,7 @@ function Get-SystemDisk {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -385,7 +385,7 @@ function Get-Hostname {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -426,7 +426,7 @@ function Get-SystemUptime {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -465,7 +465,7 @@ function Get-SystemInfo {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -514,7 +514,7 @@ function Get-SystemPaths {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -567,7 +567,7 @@ function Test-HostApplicability {
     .LINK
       https://github.com/adnoctem/winkit/lib/system.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

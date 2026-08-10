@@ -198,7 +198,7 @@ function Add-DefenderExclusion {
     .LINK
       https://github.com/adnoctem/winkit/lib/security.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -257,7 +257,7 @@ function Enable-WSLFirewallRule {
     .LINK
       https://github.com/adnoctem/winkit/lib/security.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -306,7 +306,7 @@ function Disable-JetBrainsFirewallRule {
     .LINK
       https://github.com/adnoctem/winkit/lib/security.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -494,7 +494,7 @@ function Invoke-SafeProcess {
     .LINK
       https://github.com/adnoctem/winkit/lib/security.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -587,7 +587,7 @@ function Export-EventLog {
     .LINK
       https://github.com/adnoctem/winkit/lib/security.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -647,7 +647,7 @@ function Get-ScheduledTaskAction {
     .LINK
       https://github.com/adnoctem/winkit/lib/security.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -700,7 +700,7 @@ function Get-WMIPersistence {
     .LINK
       https://github.com/adnoctem/winkit/lib/security.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

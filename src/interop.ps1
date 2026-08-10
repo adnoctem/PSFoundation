@@ -13,7 +13,7 @@ function Remove-ComObject {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -52,7 +52,7 @@ function Invoke-ComGarbageCollection {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -77,7 +77,7 @@ function Get-OutlookInstallation {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -170,7 +170,7 @@ function Find-OutlookRepairTool {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -219,7 +219,7 @@ function Connect-Outlook {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -261,7 +261,7 @@ function Get-OutlookStoreRoot {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -319,7 +319,7 @@ function Add-OutlookStoreRoot {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -378,7 +378,7 @@ function Get-OutlookSubFolder {
     .LINK
       https://github.com/adnoctem/winkit/lib/interop.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

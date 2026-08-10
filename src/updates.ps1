@@ -38,7 +38,7 @@ function Test-PSWindowsUpdateAvailable {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -79,7 +79,7 @@ function Get-WindowsUpdate {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -166,7 +166,7 @@ function Install-WindowsUpdate {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -285,7 +285,7 @@ function Hide-WindowsUpdate {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -366,7 +366,7 @@ function Get-WindowsUpdateHistory {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -422,7 +422,7 @@ function Uninstall-WindowsUpdate {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -471,7 +471,7 @@ function Test-WindowsUpdateRebootRequired {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -512,7 +512,7 @@ function Get-WindowsUpdateConfiguration {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -562,7 +562,7 @@ function Get-MSStoreUpdate {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -642,7 +642,7 @@ function Install-MSStoreUpdate {
     .LINK
       https://github.com/adnoctem/winkit/lib/updates.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

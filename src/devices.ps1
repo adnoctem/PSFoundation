@@ -111,7 +111,7 @@ function Get-PrintDevice {
     .LINK
       https://github.com/adnoctem/winkit/lib/devices.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -161,7 +161,7 @@ function Get-DefaultPrintDevice {
     .LINK
       https://github.com/adnoctem/winkit/lib/devices.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -198,7 +198,7 @@ function Set-DefaultPrintDevice {
     .LINK
       https://github.com/adnoctem/winkit/lib/devices.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -305,7 +305,7 @@ function Get-ScanDevice {
     .LINK
       https://github.com/adnoctem/winkit/lib/devices.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 

@@ -58,7 +58,7 @@ function New-OperationResult {
     .LINK
       https://github.com/adnoctem/winkit/lib/common.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -161,7 +161,7 @@ function Add-OperationResult {
     .LINK
       https://github.com/adnoctem/winkit/lib/common.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -233,7 +233,7 @@ function Write-OperationResultLog {
     .LINK
       https://github.com/adnoctem/winkit/lib/common.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -322,7 +322,7 @@ function Export-RegistrySettingState {
     .LINK
       https://github.com/adnoctem/winkit/lib/common.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
@@ -404,7 +404,7 @@ function ConvertTo-RegistrySettingResult {
     .LINK
       https://github.com/adnoctem/winkit/lib/common.ps1
     .NOTES
-      Author: Maximilian Gindorfer <info@mvprowess.com>
+      Author: MVProwess <info@mvprowess.com>
       License: MIT
   #>
 
