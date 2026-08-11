@@ -54,12 +54,8 @@
     @{
       ModuleName = "PSWindowsUpdate"
       ModuleVersion = '2.2.1.5'
-    },
-    # @{ ModuleName = "PSReadLine"; ModuleVersion = '2.4.5' },
-    @{
-      ModuleName = "Pester"
-      ModuleVersion = '5.0.0'
     }
+    # @{ ModuleName = "PSReadLine"; ModuleVersion = '2.4.5' }
   )
 
   # Assemblies that must be loaded prior to importing this module

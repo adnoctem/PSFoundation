@@ -39,16 +39,24 @@ $pester = Get-Module -ListAvailable -Name Pester |
   Sort-Object Version -Descending |
   Select-Object -First 1
 
-if (-not $pester) {
-  Write-Error 'Pester is not installed. Run .\PSFoundation.ps1 init to install dependencies.'
-  exit 1
+if (-not $pester -or $pester.Version -lt [version]'5.0.0') {
+  Write-Warning 'Pester 5.0.0+ is required but was not found. Installing it now (CurrentUser scope)...'
+
+  $maintenancePath = Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'src/maintenance.ps1'
+  . $maintenancePath
+  Add-PSModule -Name Pester -MinimumVersion '5.0.0' -Scope CurrentUser -Force
+
+  $pester = Get-Module -ListAvailable -Name Pester |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
+
+  if (-not $pester -or $pester.Version -lt [version]'5.0.0') {
+    Write-Error "Failed to install Pester 5.0.0+. Run '.\PSFoundation.ps1 init' and try again."
+    exit 1
+  }
 }
 
-if ($pester.Version -lt [version]'5.0.0') {
-  Write-Error "Pester $($pester.Version) is too old. Run '.\PSFoundation.ps1 init -Force' to upgrade to 5.0.0+."
-  exit 1
-}
-
+Write-Verbose "Using Pester $($pester.Version)"
 Import-Module Pester -MinimumVersion 5.0.0 -ErrorAction Stop
 
 $config = [PesterConfiguration]@{

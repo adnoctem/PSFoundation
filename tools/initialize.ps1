@@ -34,54 +34,74 @@ $manifest = Test-ModuleManifest -Path $manifestPath -ErrorAction SilentlyContinu
 
 Write-Host "Using manifest: $manifest"
 
-foreach ($mod in $manifest.RequiredModules) {
-  if ($mod -is [string]) {
-    $name = $mod
-    $minVer = $null
-    $exactVer = $null
-  }
-  else {
-    $name = $mod.Name
-    $minVer = $mod.Version
-    $exactVer = $mod.RequiredVersion
-  }
+function Ensure-ModuleInstalled {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseApprovedVerbs', '', Justification = 'Ensure- is a descriptive verb for a private helper that guarantees a module version is installed.')]
 
-  Write-Host "Ensuring module '$name' is installed.." -ForegroundColor Yellow
+  param (
+    [Parameter(Mandatory = $true)]
+    [string]$Name,
 
-  $installed = Get-Module -ListAvailable -Name $name |
+    [version]$MinimumVersion,
+
+    [version]$RequiredVersion,
+
+    [switch]$Force
+  )
+
+  Write-Host "Ensuring module '$Name' is installed.." -ForegroundColor Yellow
+
+  $installed = Get-Module -ListAvailable -Name $Name |
     Sort-Object Version -Descending |
     Select-Object -First 1
 
   # ---- Determine whether current install satisfies the requirement ----
   $satisfied = $false
   if ($installed -and -not $Force) {
-    if ($exactVer) {
-      $satisfied = $installed.Version -eq $exactVer
+    if ($RequiredVersion) {
+      $satisfied = $installed.Version -eq $RequiredVersion
     }
-    elseif ($minVer) {
-      $satisfied = $installed.Version -ge $minVer
+    elseif ($MinimumVersion) {
+      $satisfied = $installed.Version -ge $MinimumVersion
     }
   }
 
   if ($satisfied) {
     Write-Host "    -> OK (found $($installed.Version))" -ForegroundColor Green
-    continue
+    return
   }
 
   # ---- Install ----
 
-  if ($exactVer) {
-    Add-PSModule -Name $name -Version $exactVer.ToString() -Scope CurrentUser -Force
+  if ($RequiredVersion) {
+    Add-PSModule -Name $Name -Version $RequiredVersion.ToString() -Scope CurrentUser -Force
   }
-  elseif ($minVer) {
-    Add-PSModule -Name $name -MinimumVersion $minVer.ToString() -Scope CurrentUser -Force
+  elseif ($MinimumVersion) {
+    Add-PSModule -Name $Name -MinimumVersion $MinimumVersion.ToString() -Scope CurrentUser -Force
   }
   else {
-    Add-PSModule -Name $name -Scope CurrentUser -Force
+    Add-PSModule -Name $Name -Scope CurrentUser -Force
   }
 
-  Write-Host "    -> Installed $name" -ForegroundColor Green
+  Write-Host "    -> Installed $Name" -ForegroundColor Green
+}
+
+foreach ($mod in $manifest.RequiredModules) {
+  if ($mod -is [string]) {
+    Ensure-ModuleInstalled -Name $mod -Force:$Force
+  }
+  else {
+    Ensure-ModuleInstalled -Name $mod.Name -MinimumVersion $mod.Version -RequiredVersion $mod.RequiredVersion -Force:$Force
+  }
+}
+
+# ---- Dev dependencies (test-only, not shipped with the module) --------------
+$devDependencies = @(
+  @{ Name = 'Pester'; MinimumVersion = '5.0.0' }
+)
+
+foreach ($dev in $devDependencies) {
+  Ensure-ModuleInstalled -Name $dev.Name -MinimumVersion $dev.MinimumVersion -Force:$Force
 }
 
 # ---------------------------------------------------------------
-Write-Host "Successfully processed all RequiredModules!" -ForegroundColor Yellow
+Write-Host "Successfully processed all module dependencies!" -ForegroundColor Yellow
