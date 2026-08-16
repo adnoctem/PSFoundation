@@ -95,12 +95,11 @@ foreach ($mod in $manifest.RequiredModules) {
 }
 
 # ---- Dev dependencies (test-only, not shipped with the module) --------------
-$devDependencies = @(
-  @{ Name = 'Pester'; MinimumVersion = '5.0.0' }
-)
+$devDependenciesPath = Join-Path -Path $PSScriptRoot -ChildPath 'dev-dependencies.json'
+$devDependencies = Get-Content -LiteralPath $devDependenciesPath -Raw | ConvertFrom-Json
 
 foreach ($dev in $devDependencies) {
-  Ensure-ModuleInstalled -Name $dev.Name -MinimumVersion $dev.MinimumVersion -Force:$Force
+  Ensure-ModuleInstalled -Name $dev.Name -MinimumVersion $dev.MinimumVersion -RequiredVersion $dev.RequiredVersion -Force:$Force
 }
 
 # ---------------------------------------------------------------

@@ -2,38 +2,27 @@ name: "Run Super-Linter"
 
 on: ["push", "pull_request"]
 
-permissions: read-all
+permissions: {}
 
 jobs:
   lint:
     name: Super-Lint
     runs-on: ubuntu-latest
     permissions:
+      # ref: https://github.com/super-linter/super-linter#get-started
       contents: read
       packages: read
+      issues: write
+      pull-requests: write
       statuses: write
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # super-linter needs the full git history to get the
           # list of files that changed across commits
           fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 20
-
-      - name: Run Prettier
-        run: |
-          npx prettier --write "**/*.md"
-
-      - name: Commit Prettier changes
-        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7
-        with:
-          commit_message: "style(docs): format documentation with Prettier"
-          branch: ${{ github.head_ref }}
+          persist-credentials: false
 
       - name: Superlinter
         uses: super-linter/super-linter@4ce20838b8ab83717e78138c5b3a1407148e0918 # v8.7.0

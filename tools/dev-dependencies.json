@@ -1,0 +1,10 @@
+[
+  {
+    "Name": "Pester",
+    "MinimumVersion": "5.0.0"
+  },
+  {
+    "Name": "PSScriptAnalyzer",
+    "MinimumVersion": "1.23.0"
+  }
+]

@@ -18,6 +18,7 @@
     format, fmt, fix                    .ps1   format.ps1
     lint, check, analyze                .ps1   lint.ps1
     test, tests, pester                 .ps1   test.ps1
+    deps, dependencies                  .ps1   dependencies.ps1
     release, publish                 .ps1   release.ps1
     install                           .ps1   install.ps1
     prune                             .ps1   prune.ps1
@@ -69,7 +70,7 @@ param (
 )
 
 if (-not $Command) {
-  Write-Error 'A command is required. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, release, publish, install, prune'
+  Write-Error 'A command is required. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, deps, dependencies, release, publish, install, prune'
   exit 1
 }
 
@@ -90,6 +91,8 @@ $scriptMap = @{
   'test' = 'test'
   'tests' = 'test'
   'pester' = 'test'
+  'deps' = 'dependencies'
+  'dependencies' = 'dependencies'
   'release' = 'release'
   'publish' = 'release'
   'install' = 'install'
@@ -100,7 +103,7 @@ $commandKey = $Command.ToLowerInvariant()
 $scriptName = $scriptMap[$commandKey]
 
 if (-not $scriptName) {
-  Write-Error "Unknown command '$Command'. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, release, publish, install, prune"
+  Write-Error "Unknown command '$Command'. Available: init(ialize), setup, bootstrap, build, bundle, package, format, fmt, fix, lint, check, analyze, test, pester, deps, dependencies, release, publish, install, prune"
   exit 1
 }
 

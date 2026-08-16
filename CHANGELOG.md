@@ -2,7 +2,7 @@
 
 ### Bug Fixes
 
-* **psd1:** correct invalid dependencies preventing installation ([e87e3a5](https://github.com/adnoctem/PSFoundation/commit/e87e3a5c33eeaabcbad6f1561baea952e7e88dfa))
+- **psd1:** correct invalid dependencies preventing installation ([e87e3a5](https://github.com/adnoctem/PSFoundation/commit/e87e3a5c33eeaabcbad6f1561baea952e7e88dfa))
 
 ## 1.0.0 (2026-08-10)
 

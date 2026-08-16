@@ -7,7 +7,7 @@ Contributions are welcome via GitHub's Pull Requests. This document outlines the
 The project uses the `PSFoundation.ps1` launcher script in the repository root to drive all development workflows. No external build tools (Make, CMake, etc.) are required — only PowerShell and the launcher script.
 
 Before running anything else, you must initialize the project. This downloads the PowerShell module dependencies declared in
-[`src/PSFoundation.psd1`](../src/PSFoundation.psd1):
+[`src/PSFoundation.psd1`](../src/PSFoundation.psd1) and the dev dependencies in [`tools/dev-dependencies.json`](../tools/dev-dependencies.json):
 
 ```pwsh
 .\PSFoundation.ps1 init
@@ -17,14 +17,15 @@ Additional aliases recognised for this command are `initialize`, `setup`, and `b
 
 The launcher maps short, familiar command names to the scripts located in the [`tools/`](../tools) directory:
 
-| Command   | Aliases                            | Target                 | Purpose                                             |
-| --------- | ---------------------------------- | ---------------------- | --------------------------------------------------- |
-| `init`    | `initialize`, `setup`, `bootstrap` | `tools/initialize.ps1` | Install required PowerShell modules                 |
-| `format`  | `fmt`, `fix`                       | `tools/format.ps1`     | Format all PowerShell sources with PSScriptAnalyzer |
-| `lint`    | `check`, `analyze`                 | `tools/lint.ps1`       | Run PSScriptAnalyzer rule checks                    |
-| `build`   | `bundle`, `package`                | `tools/build.ps1`      | Create distribution archives                        |
-| `test`    | `tests`, `pester`                  | `tools/test.ps1`       | Run Pester tests for the module                     |
-| `release` | `publish`                          | `tools/release.ps1`    | Publish module to PowerShell Gallery                |
+| Command   | Aliases                            | Target                   | Purpose                                             |
+| --------- | ---------------------------------- | ------------------------ | --------------------------------------------------- |
+| `init`    | `initialize`, `setup`, `bootstrap` | `tools/initialize.ps1`   | Install required PowerShell modules                 |
+| `format`  | `fmt`, `fix`                       | `tools/format.ps1`       | Format all PowerShell sources with PSScriptAnalyzer |
+| `lint`    | `check`, `analyze`                 | `tools/lint.ps1`         | Run PSScriptAnalyzer rule checks                    |
+| `build`   | `bundle`, `package`                | `tools/build.ps1`        | Create distribution archives                        |
+| `test`    | `tests`, `pester`                  | `tools/test.ps1`         | Run Pester tests for the module                     |
+| `deps`    | `dependencies`                     | `tools/dependencies.ps1` | Check and update PowerShell Gallery dependencies    |
+| `release` | `publish`                          | `tools/release.ps1`      | Publish module to PowerShell Gallery                |
 
 Any arguments supplied after the command are forwarded directly to the underlying script. For example, `.\PSFoundation.ps1 format -Check` is equivalent to running `.\tools\format.ps1 -Check`.
 

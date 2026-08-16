@@ -7,13 +7,11 @@ on:
   pull_request:
     branches: [main, next]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 defaults:
   run:
-    shell: bash
+    shell: pwsh
 
 concurrency:
   group: "${{ github.workflow }}@${{ github.event.pull_request.head.label || github.head_ref || github.ref }}"
@@ -23,9 +21,14 @@ jobs:
     name: Lint
     runs-on: windows-latest
     continue-on-error: true
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Dump pre-existing module state
         shell: pwsh
@@ -43,13 +46,18 @@ jobs:
   test:
     name: Test
     needs: [lint]
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [windows-latest, windows-2022]
-    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Dump pre-existing module state
         shell: pwsh
@@ -84,10 +92,15 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     needs: [test]
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Dispatch a release workflow run
-        if: ${{ always() && contains(join(needs.*.result, ','), 'success') }} # ref: https://github.com/actions/runner/issues/1251
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        # release only after every platform in the test matrix succeeded
+        # ref: https://github.com/actions/runner/issues/1251
+        if: ${{ github.event_name == 'push' && always() && !contains(join(needs.*.result, ','), 'failure') }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           github-token: "${{ env.GITHUB_TOKEN }}"
           script: |
