@@ -178,7 +178,11 @@ function Get-OSProductName {
 
   $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
   $props = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
-  return Resolve-WindowsProductName -ProductName $props.ProductName -CurrentBuild ([int]$props.CurrentBuild)
+  $propLookup = $props.PSObject.Properties
+
+  $productName = if ($propLookup['ProductName']) { [string]$propLookup['ProductName'].Value } else { $null }
+  $currentBuild = if ($propLookup['CurrentBuild']) { [int]$propLookup['CurrentBuild'].Value } else { 0 }
+  return Resolve-WindowsProductName -ProductName $productName -CurrentBuild $currentBuild
 }
 
 function Get-OSVersionInfo {
@@ -223,19 +227,26 @@ function Get-OSVersionInfo {
     }
   }
 
-  $currentBuild = [int]$props.CurrentBuild
+  $currentBuild = if ($propLookup['CurrentBuild']) { [int]$propLookup['CurrentBuild'].Value } else { 0 }
+  $productName = if ($propLookup['ProductName']) { [string]$propLookup['ProductName'].Value } else { $null }
+  $editionId = if ($propLookup['EditionID']) { [string]$propLookup['EditionID'].Value } else { $null }
+  $installationType = if ($propLookup['InstallationType']) { [string]$propLookup['InstallationType'].Value } else { $null }
+  $displayVersion = if ($propLookup['DisplayVersion']) { [string]$propLookup['DisplayVersion'].Value } else { $null }
+  $releaseId = if ($propLookup['ReleaseId']) { [string]$propLookup['ReleaseId'].Value } else { $null }
+  $buildBranch = if ($propLookup['BuildBranch']) { [string]$propLookup['BuildBranch'].Value } else { $null }
+  $registeredOwner = if ($propLookup['RegisteredOwner']) { [string]$propLookup['RegisteredOwner'].Value } else { $null }
 
   [PSCustomObject]@{
-    ProductName = Resolve-WindowsProductName -ProductName $props.ProductName -CurrentBuild $currentBuild
-    EditionID = $props.EditionID
-    InstallationType = $props.InstallationType
-    DisplayVersion = $props.DisplayVersion
+    ProductName = Resolve-WindowsProductName -ProductName $productName -CurrentBuild $currentBuild
+    EditionID = $editionId
+    InstallationType = $installationType
+    DisplayVersion = $displayVersion
     CurrentBuild = $currentBuild
     UBR = if ($propLookup['UBR']) { [int]$propLookup['UBR'].Value } else { 0 }
-    ReleaseId = $props.ReleaseId
-    BuildBranch = $props.BuildBranch
+    ReleaseId = $releaseId
+    BuildBranch = $buildBranch
     InstallDate = $installDate
-    RegisteredOwner = $props.RegisteredOwner
+    RegisteredOwner = $registeredOwner
   }
 }
 
