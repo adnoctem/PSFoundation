@@ -362,3 +362,22 @@ Describe 'Get-WindowsLogonEvent - system account suppression' {
     $result.TargetUserName | Should -Be 'SYSTEM'
   }
 }
+
+Describe 'Get-CertificateInventory' {
+  It 'enumerates certificates from a local store without WinRM' {
+    $result = Get-CertificateInventory -Name 'localhost' -StorePath 'Cert:\LocalMachine\Root' -ErrorAction SilentlyContinue
+    $result | Should -Not -BeNullOrEmpty
+    foreach ($cert in @($result | Select-Object -First 3)) {
+      $cert.DaysUntilExpired | Should -BeOfType [int]
+    }
+  }
+
+  It 'excludes expired certificates with -NotExpired' {
+    $all = @(Get-CertificateInventory -Name 'localhost' -StorePath 'Cert:\LocalMachine\Root' -ErrorAction SilentlyContinue)
+    $notExpired = @(Get-CertificateInventory -Name 'localhost' -StorePath 'Cert:\LocalMachine\Root' -NotExpired -ErrorAction SilentlyContinue)
+    $notExpired.Count | Should -BeLessOrEqual $all.Count
+    foreach ($cert in $notExpired) {
+      $cert.NotAfter | Should -BeGreaterThan (Get-Date)
+    }
+  }
+}

@@ -1,6 +1,9 @@
 ﻿#Requires -Version 5.1
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingComputerNameHardcoded', '', Justification = 'Test fixture probes literal loopback and unresolvable host names to exercise bounded timeouts.')]
+param()
+
 BeforeAll {
   . $PSScriptRoot/../src/common.ps1
   . $PSScriptRoot/../src/networking.ps1
@@ -344,5 +347,53 @@ Describe 'Get-MulticastAddress' {
     $result = Get-MulticastAddress
     $result | Should -Not -BeNullOrEmpty
     $result | Should -Match '^[0-9a-f:]+$'
+  }
+}
+
+Describe 'Test-TcpPortReachable' {
+  It 'reports unreachable for a refused port on localhost' {
+    $result = Test-TcpPortReachable -ComputerName 'localhost' -Port 1 -TimeoutSeconds 2
+    $result | Should -BeOfType [PSCustomObject]
+    $result.Reachable | Should -BeFalse
+  }
+
+  It 'returns within the timeout bound for an unreachable host' {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingComputerNameHardcoded', '', Justification = 'Unavoidable during testing.')]
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $result = Test-TcpPortReachable -ComputerName '10.255.255.1' -Port 1 -TimeoutSeconds 1
+    $stopwatch.Stop()
+    $result.Reachable | Should -BeFalse
+    $stopwatch.Elapsed.TotalSeconds | Should -BeLessThan 5
+  }
+}
+
+Describe 'Test-RemoteHostReachability' {
+  It 'returns a structured result per host' {
+    $result = Test-RemoteHostReachability -ComputerName 'localhost' -TimeoutSeconds 2
+    $result | Should -BeOfType [PSCustomObject]
+    $result.ComputerName | Should -Be 'localhost'
+    $result.DNSResolved | Should -BeTrue
+    $result.Channels | Should -Not -BeNullOrEmpty
+    $result.Channels.Count | Should -Be 5
+    foreach ($channel in $result.Channels) {
+      $channel.Target | Should -Be 'localhost'
+      $channel.Status | Should -BeIn 'Reachable', 'Unreachable'
+      $channel.Detail | Should -BeOfType [string]
+    }
+  }
+
+  It 'adds the RDP channel only when -IncludeRdp is supplied' {
+    $result = Test-RemoteHostReachability -ComputerName 'localhost' -IncludeRdp -TimeoutSeconds 2
+    $result.Channels.Count | Should -Be 6
+    $result.PSObject.Properties.Name | Should -Contain 'RDP'
+  }
+
+  It 'reports DNS failure for an unresolvable host' {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingComputerNameHardcoded', '', Justification = 'Unavoidable during testing.')]
+
+    $result = Test-RemoteHostReachability -ComputerName 'nonexistent-host-psf.invalid' -TimeoutSeconds 2
+    $result.DNSResolved | Should -BeFalse
+    ($result.Channels | Where-Object { $_.Source -eq 'DNS' }).Status | Should -Be 'Unreachable'
   }
 }

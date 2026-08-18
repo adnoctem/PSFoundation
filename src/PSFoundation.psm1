@@ -65,6 +65,7 @@ $publicFunctions = @(
   'Get-MulticastAddress',
   'Test-IPv4Address',
   'Test-IPv6Address',
+  'Test-RemoteHostReachability',
 
   # packages.ps1
   'New-PackageLifecycleResult',
@@ -92,6 +93,10 @@ $publicFunctions = @(
   # permissions.ps1
   'Request-AdministratorPrivilege',
   'Test-Elevation',
+  'Set-RegistryOwner',
+  'Set-ItemOwner',
+  'New-EncryptedCredentialFile',
+  'Get-EncryptedCredentialFile',
 
   # registry.ps1
   'ConvertTo-RegistryProviderPath',
@@ -136,6 +141,8 @@ $publicFunctions = @(
   'Get-WindowsPowerShellEvent',
   'Get-WindowsScheduledTaskEvent',
   'Get-WindowsSysmonEvent',
+  'Get-CertificateInventory',
+  'Set-ScriptSignature',
 
   # settings.ps1
   'Get-DefaultApp',
@@ -152,10 +159,26 @@ $publicFunctions = @(
   'Get-SystemUptime',
   'Get-SystemInfo',
   'Get-SystemPaths',
+  'Test-HostApplicability',
+  'Get-DotNetVersion',
+  'New-DriveMapping',
+  'Remove-DriveMapping',
+  'Test-PendingReboot',
+  'Test-SystemFileIntegrity',
+  'Convert-RobocopyExitCode',
+  'Find-ServiceAccountUsage',
+  'Get-FileLockProcess',
 
   # user.ps1
   'Get-UserInfo',
   'Get-UserSID',
+  'Test-ADCredential',
+  'Get-ADAccountLockoutSource',
+  'Get-ADFSMORoleHolder',
+
+  # provisioning.ps1
+  'New-OfflineDomainJoinBlob',
+  'New-DjoinFile',
 
   # policies.ps1
   'Resolve-LGPOSource',

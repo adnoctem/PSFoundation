@@ -39,6 +39,9 @@ repos:
     hooks:
       - id: typos
         exclude: (.*\.yaml|^CHANGELOG.md$)
+        args:
+          - "--config"
+          - ".github/linters/.typos.toml"
 
   # Local hooks
   - repo: local

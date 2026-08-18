@@ -32,23 +32,24 @@ and publishing the module.
 
 PSFoundation provides functions across these domains:
 
-| Module File       | Domain                                                           |
-| ----------------- | ---------------------------------------------------------------- |
-| `common.ps1`      | Operation result helpers and registry setting state management   |
-| `data.ps1`        | Data transformation utilities (quote conversion, object merging) |
-| `devices.ps1`     | Print and scan device enumeration and management                 |
-| `interop.ps1`     | COM interop and Outlook automation                               |
-| `log.ps1`         | Console logging helpers                                          |
-| `networking.ps1`  | IP validation, network adapter resolution, address calculation   |
-| `packages.ps1`    | Win32 and AppX package lifecycle management                      |
-| `permissions.ps1` | Elevation detection and privilege requests                       |
-| `policies.ps1`    | LGPO (Local Group Policy Object) integration                     |
-| `registry.ps1`    | Registry key and value CRUD with path resolution                 |
-| `security.ps1`    | Defender, firewall, event log analysis, security auditing        |
-| `settings.ps1`    | Default application associations                                 |
-| `system.ps1`      | OS version, memory, disk, uptime, and hostname queries           |
-| `updates.ps1`     | Windows Update and Microsoft Store update management             |
-| `user.ps1`        | User and SID information retrieval                               |
+| Module File        | Domain                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `provisioning.ps1` | Offline domain join blob provisioning and djoin file creation                                                                  |
+| `common.ps1`       | Operation result helpers and registry setting state management                                                                 |
+| `data.ps1`         | Data transformation utilities (quote conversion, object merging)                                                               |
+| `devices.ps1`      | Print and scan device enumeration and management                                                                               |
+| `interop.ps1`      | COM interop and Outlook automation                                                                                             |
+| `log.ps1`          | Console logging helpers                                                                                                        |
+| `networking.ps1`   | IP validation, adapter resolution, address calculation, remote host reachability                                               |
+| `packages.ps1`     | Win32 and AppX package lifecycle management                                                                                    |
+| `permissions.ps1`  | Elevation, ownership takeover, and encrypted credential files                                                                  |
+| `policies.ps1`     | LGPO (Local Group Policy Object) integration                                                                                   |
+| `registry.ps1`     | Registry key and value CRUD with path resolution                                                                               |
+| `security.ps1`     | Defender, firewall, event log analysis, certificate inventory, script signing                                                  |
+| `settings.ps1`     | Default application associations                                                                                               |
+| `system.ps1`       | OS version, .NET version, drive mapping, pending-reboot and file integrity checks, service account search, file lock diagnosis |
+| `updates.ps1`      | Windows Update and Microsoft Store update management                                                                           |
+| `user.ps1`         | User and SID information, AD credential validation, lockout source and FSMO reporting                                          |
 
 ## TL;DR
 

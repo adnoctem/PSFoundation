@@ -44,3 +44,31 @@ Describe 'Get-UserSID' {
     $result | Should -BeNullOrEmpty
   }
 }
+
+Describe 'Test-ADCredential' {
+  It 'is defined with a PSCredential parameter' {
+    $command = Get-Command Test-ADCredential -ErrorAction SilentlyContinue
+    $command | Should -Not -BeNullOrEmpty
+    $command.Parameters.ContainsKey('Credential') | Should -BeTrue
+    $command.Parameters.ContainsKey('Domain') | Should -BeTrue
+  }
+}
+
+Describe 'Get-ADAccountLockoutSource' {
+  It 'is defined with expected parameters' {
+    $command = Get-Command Get-ADAccountLockoutSource -ErrorAction SilentlyContinue
+    $command | Should -Not -BeNullOrEmpty
+    $command.Parameters.ContainsKey('DomainName') | Should -BeTrue
+    $command.Parameters.ContainsKey('UserName') | Should -BeTrue
+    $command.Parameters.ContainsKey('StartTime') | Should -BeTrue
+    $command.Parameters.ContainsKey('Credential') | Should -BeTrue
+  }
+}
+
+Describe 'Get-ADFSMORoleHolder' {
+  It 'is defined with a Credential parameter' {
+    $command = Get-Command Get-ADFSMORoleHolder -ErrorAction SilentlyContinue
+    $command | Should -Not -BeNullOrEmpty
+    $command.Parameters.ContainsKey('Credential') | Should -BeTrue
+  }
+}

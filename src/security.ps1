@@ -1796,3 +1796,218 @@ function Get-WindowsSysmonEvent {
       return $true
     }
 }
+
+function Get-CertificateInventory {
+  <#
+    .SYNOPSIS
+      Get-CertificateInventory - Lists certificates in local or remote stores with expiry filtering.
+    .DESCRIPTION
+      Queries a certificate store (e.g. Cert:\LocalMachine\My) on the local
+      computer or on remote computers, returning one object per certificate
+      with DaysUntilExpired, Template, and formatted extensions.
+
+      -DaysLeft filters to certificates expiring within that many days
+      (e.g. -DaysLeft 30 for a standing "what expires in the next 30 days"
+      report); -NotExpired excludes already-expired certificates. The store
+      path is exposed as a dynamic parameter validated against the live Cert:
+      drive, so an invalid store path is rejected at binding time.
+    .PARAMETER Name
+      Computer name(s) to query. Defaults to localhost.
+    .PARAMETER Subject
+      Subject filter (wildcards supported). Defaults to all.
+    .PARAMETER DaysLeft
+      Only return certificates expiring within this many days. When omitted,
+      no expiry-window filter is applied.
+    .PARAMETER NotExpired
+      Exclude certificates that have already expired.
+    .PARAMETER Credential
+      Optional credential for remote computers.
+    .OUTPUTS
+      Certificate objects enriched with DaysUntilExpired, Template, and
+      ExtensionsFormatted properties.
+    .EXAMPLE
+      PS> Get-CertificateInventory -DaysLeft 30 -NotExpired
+      PS> Get-CertificateInventory -ComputerName 'SRV01' -StorePath Cert:\LocalMachine\My -DaysLeft 60
+    .LINK
+      https://github.com/adnoctem/winkit/lib/security.ps1
+    .NOTES
+      Author: MVProwess <info@mvprowess.com>
+      License: MIT
+  #>
+
+  [CmdletBinding()]
+  param (
+    [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+    [Alias('ComputerName', 'Computer')]
+    [string[]]
+    $Name = @('localhost'),
+
+    [Parameter(Mandatory = $false)]
+    [string]
+    $Subject = '*',
+
+    [Parameter(Mandatory = $false)]
+    [int]
+    $DaysLeft,
+
+    [Parameter(Mandatory = $false)]
+    [switch]
+    $NotExpired,
+
+    [Parameter(Mandatory = $false)]
+    [System.Management.Automation.PSCredential]
+    $Credential
+  )
+
+  dynamicparam {
+    $parameterName = 'StorePath'
+
+    $runtimeParameterDictionary = [System.Management.Automation.RuntimeDefinedParameterDictionary]::new()
+    $attributeCollection = [System.Collections.ObjectModel.Collection[System.Attribute]]::new()
+
+    $parameterAttribute = [System.Management.Automation.ParameterAttribute]::new()
+    $parameterAttribute.Mandatory = $true
+    $parameterAttribute.Position = 1
+
+    $attributeCollection.Add($parameterAttribute)
+
+    $storePaths = [string[]]@(Get-ChildItem -Path 'Cert:' | ForEach-Object { $parent = $_.Location; Get-ChildItem -Path "Cert:\$parent" | ForEach-Object { "Cert:\$parent\$($_.Name)" } })
+
+    $validateSetAttribute = [System.Management.Automation.ValidateSetAttribute]::new($storePaths)
+    $attributeCollection.Add($validateSetAttribute)
+
+    $runtimeParameter = [System.Management.Automation.RuntimeDefinedParameter]::new($parameterName, [string], $attributeCollection)
+    $runtimeParameterDictionary.Add($parameterName, $runtimeParameter)
+
+    return $runtimeParameterDictionary
+  }
+
+  begin {
+    $storePath = $PSBoundParameters[$parameterName]
+
+    $scriptBlock = {
+      param(
+        [string]$StorePath,
+        [string]$Subject = '*'
+      )
+
+      Get-ChildItem -Path $StorePath -ErrorAction SilentlyContinue |
+        Where-Object { $_.Subject -like $Subject } |
+        ForEach-Object {
+          $extensionsFormatted = try { $_.Extensions.Format(1) } catch { $null }
+          $template = try { ($_.Extensions.Format(0) -replace '(.+)?=(.+)\((.+)?', '$2')[0] } catch { $null }
+          $days = (New-TimeSpan -End $_.NotAfter).Days
+
+          $cert = $_.psobject.Copy()
+          $cert | Add-Member -Name ExtensionsFormatted -MemberType NoteProperty -Value $extensionsFormatted
+          $cert | Add-Member -Name DaysUntilExpired -MemberType NoteProperty -Value $days
+          $cert | Add-Member -Name Template -MemberType NoteProperty -Value $template
+          $cert
+        }
+    }
+  }
+
+  process {
+    foreach ($computer in $Name) {
+      if ($computer -in @('localhost', '.', $env:COMPUTERNAME, $env:COMPUTERNAME + '.', '127.0.0.1', '::1')) {
+        $results = & $scriptBlock -StorePath $storePath -Subject $Subject
+      }
+      elseif ($Credential) {
+        $results = Invoke-Command -ComputerName $computer -ScriptBlock $scriptBlock -ArgumentList $storePath, $Subject -Credential $Credential -ErrorAction SilentlyContinue
+      }
+      else {
+        $results = Invoke-Command -ComputerName $computer -ScriptBlock $scriptBlock -ArgumentList $storePath, $Subject -ErrorAction SilentlyContinue
+      }
+
+      $results | Where-Object {
+        if ($NotExpired -and $_.NotAfter -le (Get-Date)) { return $false }
+        if ($PSBoundParameters.ContainsKey('DaysLeft') -and $_.DaysUntilExpired -gt $DaysLeft) { return $false }
+        return $true
+      }
+    }
+  }
+}
+function Set-ScriptSignature {
+  <#
+    .SYNOPSIS
+      Set-ScriptSignature - Bulk Authenticode-signs PowerShell scripts under a folder.
+    .DESCRIPTION
+      Recursively signs every .ps1/.psm1/.psd1 file under -Path with the
+      supplied code-signing certificate. -TimestampServer optionally adds a
+      trusted timestamp so signatures survive certificate expiry.
+
+      The certificate is deliberately a parameter, not generated here: for an
+      organization with AD, a certificate issued by an internal AD CS CA is
+      the appropriate source (audit trail, fleet scalability); a purchased
+      code-signing certificate is the separate consideration for public
+      PSGallery publishing. Certificate sourcing is a deliberate decision, not
+      a script default.
+    .PARAMETER Path
+      Folder to scan recursively for .ps1/.psm1/.psd1 files.
+    .PARAMETER Certificate
+      X509Certificate2 code-signing certificate to sign with.
+    .PARAMETER TimestampServer
+      Optional RFC 3161 / Authenticode timestamp server URL, e.g.
+      http://timestamp.digicert.com. Timestamps make signatures survive
+      certificate expiry.
+    .OUTPUTS
+      One New-OperationResult-shaped result per signed file.
+    .EXAMPLE
+      PS> $cert = Get-ChildItem -Path 'Cert:\LocalMachine\My' | Where-Object Subject -eq 'CN=PSF Code Signing'
+      PS> Set-ScriptSignature -Path '.\src' -Certificate $cert -TimestampServer 'http://timestamp.digicert.com'
+    .LINK
+      https://github.com/adnoctem/winkit/lib/security.ps1
+    .NOTES
+      Author: MVProwess <info@mvprowess.com>
+      License: MIT
+  #>
+
+  [OutputType([PSCustomObject])]
+  [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+  param (
+    [Parameter(Mandatory = $true)]
+    [string]
+    $Path,
+
+    [Parameter(Mandatory = $true)]
+    [System.Security.Cryptography.X509Certificates.X509Certificate2]
+    $Certificate,
+
+    [Parameter(Mandatory = $false)]
+    [string]
+    $TimestampServer
+  )
+
+  if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+    throw "Folder not found: $Path"
+  }
+
+  $signParams = @{
+    Certificate = $Certificate
+  }
+  if ($TimestampServer) {
+    $signParams.TimeStampServer = $TimestampServer
+  }
+
+  Get-ChildItem -LiteralPath $Path -Recurse -File |
+    Where-Object { $_.Extension -in @('.ps1', '.psm1', '.psd1') } |
+    ForEach-Object {
+      if ($PSCmdlet.ShouldProcess($_.FullName, 'Sign script with Authenticode')) {
+        try {
+          $signature = Set-AuthenticodeSignature -FilePath $_.FullName @signParams -ErrorAction Stop
+          if ($signature.Status -eq 'Valid') {
+            New-OperationResult -Target $_.FullName -Source 'Authenticode' -Action 'Sign' -Status 'Completed' -Detail "Signed; status: $($signature.Status)."
+          }
+          else {
+            New-OperationResult -Target $_.FullName -Source 'Authenticode' -Action 'Sign' -Status 'Failed' -ErrorMessage "Signing produced status: $($signature.Status) ($($signature.StatusMessage))."
+          }
+        }
+        catch {
+          New-OperationResult -Target $_.FullName -Source 'Authenticode' -Action 'Sign' -Status 'Failed' -ErrorMessage $_.Exception.Message
+        }
+      }
+      elseif ($WhatIfPreference) {
+        New-OperationResult -Target $_.FullName -Source 'Authenticode' -Action 'Sign' -Status 'DryRun' -Detail 'No files signed.'
+      }
+    }
+}
