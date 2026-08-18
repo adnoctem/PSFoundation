@@ -1678,3 +1678,329 @@ function Get-FileLockProcess {
     }
   }
 }
+
+# Services that must never be bulk-changed to Automatic/Manual by
+# Set-ServiceStartupState. Extend this list for environment-specific
+# sensitive services (e.g. AD/domain services) - the guard refuses any change
+# to Automatic/Manual for listed services unless they are explicitly excluded
+# via -Filter.
+$script:ProtectedServiceNames = @('RemoteAccess', 'RemoteRegistry')
+
+function ConvertTo-FontFallbackName {
+  <#
+    .SYNOPSIS
+      Derives a font display name from a file name.
+    .DESCRIPTION
+      Pure fallback used when COM font metadata is unavailable: strips the
+      font extension, spaces out common tokens, and collapses whitespace so
+      e.g. 'FiraCode-NF-Bold.ttf' becomes 'Fira Code NF Bold'. Returns $null
+      when nothing usable can be derived.
+    .PARAMETER FileName
+      The font file name to derive the display name from.
+    .OUTPUTS
+      string, or $null.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$FileName
+  )
+
+  $name = $FileName -replace '\.(ttf|ttc|otf)$', ''
+  $name = $name -replace '[-_\[\]\.]', ' '
+  $tokenMap = @{
+    'Mono' = ' Mono'
+    'NF' = ' NF'
+    'NL' = ' NL'
+    'VF' = ' VF'
+    'wght' = ' Variable'
+    'Thin' = ' Thin'
+    'Semi' = ' Semi'
+    'Medium' = ' Medium'
+    'Extra' = ' Extra'
+    'Bold' = ' Bold'
+    'Italic' = ' Italic'
+    'Light' = ' Light'
+    'Regular' = ' Regular'
+  }
+  foreach ($token in $tokenMap.Keys) {
+    $name = $name.Replace($token, $tokenMap[$token])
+  }
+  $name = $name -replace '\s+', ' '
+  $name = $name.Trim()
+
+  if ([string]::IsNullOrWhiteSpace($name)) {
+    return $null
+  }
+
+  $name
+}
+
+function Get-FontRegistryName {
+  <#
+    .SYNOPSIS
+      Derives the registry display name for a font file.
+    .DESCRIPTION
+      Reads the font display name from COM Shell.Application metadata (the
+      same detail fields Explorer shows) plus the font type suffix, with a
+      filename-based fallback for fonts where the metadata read fails or
+      returns nothing usable.
+    .PARAMETER FontFile
+      The font file to derive the name for.
+    .OUTPUTS
+      string, or $null when no name can be derived.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.IO.FileInfo]$FontFile
+  )
+
+  $fontType = '(OpenType)'
+  $displayName = $null
+
+  try {
+    $shellFolder = (New-Object -ComObject Shell.Application).Namespace($FontFile.DirectoryName)
+    $shellFile = $shellFolder.ParseName($FontFile.Name)
+    if ($shellFile) {
+      $details = [string]$shellFolder.GetDetailsOf($shellFile, 2)
+      if ($details -like '*TrueType*') {
+        $fontType = '(TrueType)'
+      }
+      $displayName = [string]$shellFolder.GetDetailsOf($shellFile, 21)
+    }
+  }
+  catch {
+    $displayName = $null
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($displayName)) {
+    return "$displayName $fontType"
+  }
+
+  # Fallback: derive a display name from the file name (spaces out common
+  # tokens so e.g. 'FiraCode-NF-Bold.ttf' becomes 'Fira Code NF Bold').
+  $name = ConvertTo-FontFallbackName -FileName $FontFile.Name
+  if (-not $name) {
+    return $null
+  }
+
+  "$name $fontType"
+}
+
+function Install-Font {
+  <#
+    .SYNOPSIS
+      Installs font files into the system font store.
+    .DESCRIPTION
+      Copies .ttf/.ttc/.otf font files from a source folder into
+      %SystemRoot%\Fonts and registers each one under
+      HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Fonts with a
+      correctly-derived display name - Windows does not recognize a font as
+      installed without the matching registry entry. The display name comes
+      from COM Shell.Application metadata extraction with a filename-based
+      fallback for fonts where the metadata read fails.
+
+      Requires administrator elevation for the system font store. The source
+      files are left in place unless -RemoveSource is supplied.
+
+      Adapted from Install-Font.psm1 in LeDragoX/Win-Debloat-Tools (itself
+      adapted from a gist by anthonyeden).
+    .PARAMETER FontSourceFolder
+      Folder containing the font files (.ttf/.ttc/.otf) to install.
+    .PARAMETER RemoveSource
+      Delete each font file from the source folder after a successful install
+      (matching the reference behavior; off by default - the module never
+      deletes user files unless asked).
+    .OUTPUTS
+      PSCustomObject - New-OperationResult-shaped result per font file.
+    .EXAMPLE
+      PS> Install-Font -FontSourceFolder 'C:\downloads\fonts'
+      PS> Install-Font -FontSourceFolder 'C:\downloads\fonts' -RemoveSource
+    .LINK
+      https://github.com/LeDragoX/Win-Debloat-Tools
+  #>
+  [CmdletBinding(SupportsShouldProcess = $true)]
+  param(
+    [Parameter(Mandatory = $true, Position = 0)]
+    [string]$FontSourceFolder,
+
+    [switch]$RemoveSource
+  )
+
+  $fontsKey = 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+  $systemFontsPath = Join-Path $env:SystemRoot 'Fonts'
+
+  $fontFiles = @(Get-ChildItem -LiteralPath $FontSourceFolder -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.ttf', '.ttc', '.otf') })
+
+  $results = New-Object System.Collections.ArrayList
+
+  if ($fontFiles.Count -eq 0) {
+    [void]$results.Add((New-OperationResult -Target $FontSourceFolder -Source 'Font' -Action 'Install' -Status 'Skipped' -Detail 'No font files (.ttf/.ttc/.otf) found in the source folder.'))
+    return $results
+  }
+
+  foreach ($fontFile in $fontFiles) {
+    $targetPath = Join-Path $systemFontsPath $fontFile.Name
+
+    if (-not $PSCmdlet.ShouldProcess($fontFile.Name, "Install font to $targetPath")) {
+      [void]$results.Add((New-OperationResult -Target $fontFile.Name -Source 'Font' -Action 'Install' -Status 'Skipped' -Detail 'WhatIf'))
+      continue
+    }
+
+    $registryName = Get-FontRegistryName -FontFile $fontFile
+    if (-not $registryName) {
+      [void]$results.Add((New-OperationResult -Target $fontFile.Name -Source 'Font' -Action 'Install' -Status 'Failed' -ErrorMessage 'Could not derive a display name for the font.'))
+      continue
+    }
+
+    try {
+      $null = Set-RegistryValue -Path $fontsKey -Name $registryName -Value $fontFile.Name -Type String -ErrorAction Stop
+      Copy-Item -LiteralPath $fontFile.FullName -Destination $targetPath -Force -ErrorAction Stop
+      if ($RemoveSource) {
+        Remove-Item -LiteralPath $fontFile.FullName -Force -ErrorAction Stop
+      }
+      [void]$results.Add((New-OperationResult -Target $fontFile.Name -Source 'Font' -Action 'Install' -Status 'Completed' -Detail "Registered as '$registryName' in $targetPath."))
+    }
+    catch {
+      [void]$results.Add((New-OperationResult -Target $fontFile.Name -Source 'Font' -Action 'Install' -Status 'Failed' -ErrorMessage $_.Exception.Message))
+    }
+  }
+
+  $results
+}
+
+function Set-ServiceStartupState {
+  <#
+    .SYNOPSIS
+      Sets the startup type of one or more Windows services.
+    .DESCRIPTION
+      Bulk service state change with safety guards: each requested service is
+      checked for existence (missing services are warned about and skipped
+      rather than erroring), -Filter excludes specific services from an
+      otherwise-bulk operation, and the protected-service guard refuses to
+      change any service listed in $script:ProtectedServiceNames to
+      Automatic/Manual - only Disabled is permitted for those, unless they
+      are explicitly excluded via -Filter. Extend the protected list for
+      environment-specific sensitive services.
+    .PARAMETER Name
+      Service name(s) to change.
+    .PARAMETER StartupType
+      Desired startup type: Automatic, Manual or Disabled.
+    .PARAMETER Filter
+      Service name(s) to exclude from the operation.
+    .OUTPUTS
+      PSCustomObject - New-OperationResult-shaped result per service.
+    .EXAMPLE
+      PS> Set-ServiceStartupState -Name 'Fax','Spooler' -StartupType Automatic
+      PS> Set-ServiceStartupState -Name 'Fax','Spooler' -StartupType Disabled -Filter 'Fax'
+  #>
+  [CmdletBinding(SupportsShouldProcess = $true)]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$Name,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Automatic', 'Manual', 'Disabled')]
+    [string]$StartupType,
+
+    [string[]]$Filter
+  )
+
+  $results = New-Object System.Collections.ArrayList
+
+  foreach ($serviceName in $Name) {
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if (-not $service) {
+      [void]$results.Add((New-OperationResult -Target $serviceName -Source 'Service' -Action 'SetStartup' -Status 'Skipped' -Detail 'Service not found.'))
+      continue
+    }
+    if ($Filter -and ($serviceName -in $Filter)) {
+      [void]$results.Add((New-OperationResult -Target $serviceName -Source 'Service' -Action 'SetStartup' -Status 'Skipped' -Detail 'Excluded via -Filter.'))
+      continue
+    }
+    if (($serviceName -in $script:ProtectedServiceNames) -and ($StartupType -ne 'Disabled')) {
+      [void]$results.Add((New-OperationResult -Target $serviceName -Source 'Service' -Action 'SetStartup' -Status 'Refused' -Detail 'Protected service - only Disabled is permitted without an explicit -Filter exclusion.'))
+      continue
+    }
+    if (-not $PSCmdlet.ShouldProcess($serviceName, "Set startup type to $StartupType")) {
+      [void]$results.Add((New-OperationResult -Target $serviceName -Source 'Service' -Action 'SetStartup' -Status 'Skipped' -Detail 'WhatIf'))
+      continue
+    }
+    try {
+      Set-Service -Name $serviceName -StartupType $StartupType -ErrorAction Stop
+      [void]$results.Add((New-OperationResult -Target $serviceName -Source 'Service' -Action 'SetStartup' -Status 'Completed' -Detail "Startup type set to $StartupType."))
+    }
+    catch {
+      [void]$results.Add((New-OperationResult -Target $serviceName -Source 'Service' -Action 'SetStartup' -Status 'Failed' -ErrorMessage $_.Exception.Message))
+    }
+  }
+
+  $results
+}
+
+function Set-ScheduledTaskState {
+  <#
+    .SYNOPSIS
+      Enables or disables one or more scheduled tasks.
+    .DESCRIPTION
+      Bulk scheduled-task state change with safety guards: each requested
+      task is checked for existence (missing tasks are warned about and
+      skipped rather than erroring) and -Filter excludes specific tasks from
+      an otherwise-bulk operation.
+    .PARAMETER TaskName
+      Task name(s) to change.
+    .PARAMETER State
+      Desired state: Enabled or Disabled.
+    .PARAMETER Filter
+      Task name(s) to exclude from the operation.
+    .OUTPUTS
+      PSCustomObject - New-OperationResult-shaped result per task.
+    .EXAMPLE
+      PS> Set-ScheduledTaskState -TaskName 'OneDrive*' -State Disabled
+      PS> Set-ScheduledTaskState -TaskName 'OneDrive*' -State Disabled -Filter 'OneDrive Maintenance'
+  #>
+  [CmdletBinding(SupportsShouldProcess = $true)]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$TaskName,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Enabled', 'Disabled')]
+    [string]$State,
+
+    [string[]]$Filter
+  )
+
+  $results = New-Object System.Collections.ArrayList
+
+  foreach ($task in $TaskName) {
+    $existing = Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
+    if (-not $existing) {
+      [void]$results.Add((New-OperationResult -Target $task -Source 'ScheduledTask' -Action 'SetState' -Status 'Skipped' -Detail 'Task not found.'))
+      continue
+    }
+    if ($Filter -and ($task -in $Filter)) {
+      [void]$results.Add((New-OperationResult -Target $task -Source 'ScheduledTask' -Action 'SetState' -Status 'Skipped' -Detail 'Excluded via -Filter.'))
+      continue
+    }
+    if (-not $PSCmdlet.ShouldProcess($task, "Set state to $State")) {
+      [void]$results.Add((New-OperationResult -Target $task -Source 'ScheduledTask' -Action 'SetState' -Status 'Skipped' -Detail 'WhatIf'))
+      continue
+    }
+    try {
+      if ($State -eq 'Enabled') {
+        $null = Enable-ScheduledTask -TaskName $task -ErrorAction Stop
+      }
+      else {
+        $null = Disable-ScheduledTask -TaskName $task -ErrorAction Stop
+      }
+      [void]$results.Add((New-OperationResult -Target $task -Source 'ScheduledTask' -Action 'SetState' -Status 'Completed' -Detail "State set to $State."))
+    }
+    catch {
+      [void]$results.Add((New-OperationResult -Target $task -Source 'ScheduledTask' -Action 'SetState' -Status 'Failed' -ErrorMessage $_.Exception.Message))
+    }
+  }
+
+  $results
+}

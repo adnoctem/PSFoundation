@@ -2,12 +2,12 @@
 
 ### Features
 
-* **src:** add ownership, provisioning, and remote diagnostics primitives ([2e240bd](https://github.com/adnoctem/PSFoundation/commit/2e240bdd2fabb916905b96e2bfb91383b4077ad7))
+- **src:** add ownership, provisioning, and remote diagnostics primitives ([2e240bd](https://github.com/adnoctem/PSFoundation/commit/2e240bdd2fabb916905b96e2bfb91383b4077ad7))
 
 ### Bug Fixes
 
-* **src:** make registry queries StrictMode-safe and harden test isolation ([f55b0c8](https://github.com/adnoctem/PSFoundation/commit/f55b0c8d0d4bdaa5fe269571afc7537cd7d67df4))
-* **src:** tolerate missing optional OS registry values under StrictMode ([786fd91](https://github.com/adnoctem/PSFoundation/commit/786fd91f0cb6bf9fe24357972383a46ff636e0bc))
+- **src:** make registry queries StrictMode-safe and harden test isolation ([f55b0c8](https://github.com/adnoctem/PSFoundation/commit/f55b0c8d0d4bdaa5fe269571afc7537cd7d67df4))
+- **src:** tolerate missing optional OS registry values under StrictMode ([786fd91](https://github.com/adnoctem/PSFoundation/commit/786fd91f0cb6bf9fe24357972383a46ff636e0bc))
 
 ## [1.0.1](https://github.com/adnoctem/PSFoundation/compare/v1.0.0...v1.0.1) (2026-08-11)
 

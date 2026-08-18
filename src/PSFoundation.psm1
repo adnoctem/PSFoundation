@@ -168,6 +168,9 @@ $publicFunctions = @(
   'Convert-RobocopyExitCode',
   'Find-ServiceAccountUsage',
   'Get-FileLockProcess',
+  'Install-Font',
+  'Set-ServiceStartupState',
+  'Set-ScheduledTaskState',
 
   # user.ps1
   'Get-UserInfo',

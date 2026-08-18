@@ -1,0 +1,1 @@
+E:/Software/AdNoctem/PSFoundation/docs/AGENTS.md

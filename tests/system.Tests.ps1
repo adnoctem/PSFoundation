@@ -246,3 +246,125 @@ Describe 'Find-ServiceAccountUsage' {
     ($null -ne $result.SchTasks) | Should -BeTrue
   }
 }
+
+Describe 'ConvertTo-FontFallbackName' {
+  It 'derives a spaced name from a tokenized file name' {
+    ConvertTo-FontFallbackName -FileName 'FiraCode-NF-Bold.ttf' | Should -Be 'FiraCode NF Bold'
+  }
+
+  It 'maps the wght token to Variable' {
+    ConvertTo-FontFallbackName -FileName 'Roboto-VF.ttf' | Should -Be 'Roboto VF'
+  }
+
+  It 'collapses duplicate whitespace' {
+    ConvertTo-FontFallbackName -FileName 'My  Font--Regular.ttf' | Should -Be 'My Font Regular'
+  }
+
+  It 'returns $null for an unusable name' {
+    ConvertTo-FontFallbackName -FileName '.ttf' | Should -BeNullOrEmpty
+  }
+}
+
+Describe 'Get-FontRegistryName' {
+  It 'returns a non-empty display name for a plausible font file' {
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("winkit-font-test-$(New-Guid)")
+    $null = New-Item -ItemType Directory -Path $tempDir
+    try {
+      $fakeFont = Join-Path $tempDir 'FiraCode-NF-Bold.ttf'
+      $null = [System.IO.File]::WriteAllText($fakeFont, 'not a real font')
+      $fontFile = [System.IO.FileInfo]::new($fakeFont)
+      $result = Get-FontRegistryName -FontFile $fontFile
+      $result | Should -Not -BeNullOrEmpty
+      $result | Should -Match 'Fira Code NF Bold|FiraCode'
+    }
+    finally {
+      Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+Describe 'Install-Font' {
+  It 'skips when no font files are present' {
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("winkit-font-empty-$(New-Guid)")
+    $null = New-Item -ItemType Directory -Path $tempDir
+    try {
+      $result = @(Install-Font -FontSourceFolder $tempDir -WhatIf)
+      $result[0].Status | Should -Be 'Skipped'
+      $result[0].Detail | Should -Match 'No font files'
+    }
+    finally {
+      Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  It 'skips per-font under -WhatIf when font files exist' {
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("winkit-font-whatif-$(New-Guid)")
+    $null = New-Item -ItemType Directory -Path $tempDir
+    try {
+      $fakeFont = Join-Path $tempDir 'TestFont-Regular.ttf'
+      $null = [System.IO.File]::WriteAllText($fakeFont, 'not a real font')
+      $result = @(Install-Font -FontSourceFolder $tempDir -WhatIf)
+      $result[0].Status | Should -Be 'Skipped'
+      $result[0].Detail | Should -Be 'WhatIf'
+    }
+    finally {
+      Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+Describe 'Set-ServiceStartupState' {
+  It 'skips services that do not exist' {
+    $result = @(Set-ServiceStartupState -Name 'NoSuchServiceXYZ' -StartupType Automatic -WhatIf)
+    $result[0].Status | Should -Be 'Skipped'
+    $result[0].Detail | Should -Be 'Service not found.'
+  }
+
+  It 'excludes services listed in -Filter' {
+    Mock Get-Service { [pscustomobject]@{ Name = 'Spooler' } }
+    $result = @(Set-ServiceStartupState -Name 'Spooler' -StartupType Automatic -Filter 'Spooler' -WhatIf)
+    $result[0].Status | Should -Be 'Skipped'
+    $result[0].Detail | Should -Be 'Excluded via -Filter.'
+  }
+
+  It 'refuses to change a protected service to Automatic' {
+    $result = @(Set-ServiceStartupState -Name 'RemoteRegistry' -StartupType Automatic -WhatIf)
+    $result[0].Status | Should -Be 'Refused'
+  }
+
+  It 'allows Disabled for a protected service' {
+    Mock Get-Service { [pscustomobject]@{ Name = 'RemoteRegistry' } }
+    Mock Set-Service { }
+    $result = @(Set-ServiceStartupState -Name 'RemoteRegistry' -StartupType Disabled -Confirm:$false)
+    $result[0].Status | Should -Be 'Completed'
+  }
+
+  It 'skips under -WhatIf for a normal service' {
+    Mock Get-Service { [pscustomobject]@{ Name = 'Spooler' } }
+    $result = @(Set-ServiceStartupState -Name 'Spooler' -StartupType Automatic -WhatIf)
+    $result[0].Status | Should -Be 'Skipped'
+    $result[0].Detail | Should -Be 'WhatIf'
+  }
+}
+
+Describe 'Set-ScheduledTaskState' {
+  It 'skips tasks that do not exist' {
+    $result = @(Set-ScheduledTaskState -TaskName 'NoSuchTaskXYZ' -State Disabled -WhatIf)
+    $result[0].Status | Should -Be 'Skipped'
+    $result[0].Detail | Should -Be 'Task not found.'
+  }
+
+  It 'excludes tasks listed in -Filter' {
+    Mock Get-ScheduledTask { [pscustomobject]@{ TaskName = 'SampleTask' } }
+    $result = @(Set-ScheduledTaskState -TaskName 'SampleTask' -State Disabled -Filter 'SampleTask' -WhatIf)
+    $result[0].Status | Should -Be 'Skipped'
+    $result[0].Detail | Should -Be 'Excluded via -Filter.'
+  }
+
+  It 'skips under -WhatIf for an existing task' {
+    Mock Get-ScheduledTask { [pscustomobject]@{ TaskName = 'SampleTask' } }
+    $result = @(Set-ScheduledTaskState -TaskName 'SampleTask' -State Disabled -WhatIf)
+    $result[0].Status | Should -Be 'Skipped'
+    $result[0].Detail | Should -Be 'WhatIf'
+  }
+}
