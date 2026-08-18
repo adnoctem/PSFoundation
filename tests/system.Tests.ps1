@@ -2,6 +2,9 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
 BeforeAll {
+  . $PSScriptRoot/../src/common.ps1
+  . $PSScriptRoot/../src/user.ps1
+  . $PSScriptRoot/../src/permissions.ps1
   . $PSScriptRoot/../src/system.ps1
 }
 

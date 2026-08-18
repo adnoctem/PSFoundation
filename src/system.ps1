@@ -208,14 +208,18 @@ function Get-OSVersionInfo {
   $key = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
   $props = Get-ItemProperty -LiteralPath $key -ErrorAction Stop
 
+  # Optional values are queried via PSObject.Properties so missing values
+  # resolve to defaults instead of throwing under StrictMode.
+  $propLookup = $props.PSObject.Properties
+
   $installDate = $null
-  if ($props.InstallDate) {
+  if ($propLookup['InstallDate']) {
     try {
       $unixEpochUtc = [DateTime]::SpecifyKind([DateTime]'1970-01-01T00:00:00Z', [DateTimeKind]::Utc)
-      $installDate = $unixEpochUtc.AddSeconds([int64]$props.InstallDate).ToLocalTime()
+      $installDate = $unixEpochUtc.AddSeconds([int64]$propLookup['InstallDate'].Value).ToLocalTime()
     }
     catch {
-      Write-Verbose "Unable to convert InstallDate registry value: $($props.InstallDate)"
+      Write-Verbose "Unable to convert InstallDate registry value: $($propLookup['InstallDate'].Value)"
     }
   }
 
@@ -227,7 +231,7 @@ function Get-OSVersionInfo {
     InstallationType = $props.InstallationType
     DisplayVersion = $props.DisplayVersion
     CurrentBuild = $currentBuild
-    UBR = if ($null -ne $props.UBR) { [int]$props.UBR } else { 0 }
+    UBR = if ($propLookup['UBR']) { [int]$propLookup['UBR'].Value } else { 0 }
     ReleaseId = $props.ReleaseId
     BuildBranch = $props.BuildBranch
     InstallDate = $installDate
@@ -751,12 +755,20 @@ function Get-DotNetVersion {
     Get-ItemProperty -Name Version, Release, Install, PSChildName, SP -ErrorAction SilentlyContinue |
     Where-Object { $_.PSChildName -match '^(?!S)\p{L}' } |
     ForEach-Object {
+      # Registry values are queried via PSObject.Properties so missing values
+      # resolve to defaults instead of throwing under StrictMode.
+      $props = $_.PSObject.Properties
+      $version = if ($props['Version']) { [string]$props['Version'].Value } else { $null }
+      $release = if ($props['Release']) { [int]$props['Release'].Value } else { 0 }
+      $install = if ($props['Install']) { $props['Install'].Value } else { $null }
+      $servicePack = if ($props['SP']) { [int]$props['SP'].Value } else { 0 }
+
       $releases += [PSCustomObject]@{
         Name = $_.PSChildName
-        Version = $_.Version
-        Release = $_.Release
-        Installed = $_.Install
-        Product = Resolve-NetFrameworkProductName -Release ([int]$_.Release) -ServicePack ([int]$_.SP) -ChildName $_.PSChildName
+        Version = $version
+        Release = $release
+        Installed = $install
+        Product = Resolve-NetFrameworkProductName -Release $release -ServicePack $servicePack -ChildName $_.PSChildName
       }
     }
 

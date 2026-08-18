@@ -51,9 +51,13 @@ Describe 'New-OfflineDomainJoinBlob' {
     $result.Target | Should -Be $testComputerName
   }
 
-  It 'validates required parameters' {
-    $testComputerName = 'PSFTEST01'
-    { New-OfflineDomainJoinBlob -Domain 'contoso.com' } | Should -Throw
-    { New-OfflineDomainJoinBlob -ComputerName $testComputerName } | Should -Throw
+  It 'declares required parameters as mandatory' {
+    $command = Get-Command New-OfflineDomainJoinBlob
+    foreach ($requiredParameter in 'ComputerName', 'Domain') {
+      $parameter = $command.Parameters[$requiredParameter]
+      $mandatory = ($parameter.Attributes |
+          Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] }).Mandatory
+      $mandatory | Should -BeTrue
+    }
   }
 }
