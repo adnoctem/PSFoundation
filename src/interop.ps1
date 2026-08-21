@@ -207,6 +207,45 @@ function Find-OutlookRepairTool {
   }
 }
 
+function Get-TransportMessageId {
+  <#
+    .SYNOPSIS
+      Extracts the RFC Message-ID from transport header text.
+    .DESCRIPTION
+      Parses a raw Outlook transport header block and returns the first RFC 5322
+      Message-ID field value, or $null when none is present. Headers may be
+      supplied in Unicode or ANSI form; field matching is case-insensitive and
+      line-based so embedded Received headers do not interfere.
+    .PARAMETER HeaderText
+      Raw transport header text as returned by Outlook (PR_TRANSPORT_MESSAGE_HEADERS).
+    .EXAMPLE
+      PS> Get-TransportMessageId -HeaderText "Message-ID: <abc123@example.com>`r`nReceived: ..."
+    .LINK
+      https://github.com/adnoctem/winkit/lib/interop.ps1
+    .NOTES
+      Author: MVProwess <info@mvprowess.com>
+      License: MIT
+  #>
+
+  [OutputType([string])]
+  [CmdletBinding()]
+  param (
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
+    [string]
+    $HeaderText
+  )
+
+  if ([string]::IsNullOrWhiteSpace($HeaderText)) { return $null }
+
+  $_match = [regex]::Match($HeaderText, '(?im)^Message-ID:\s*(<[^>]+>)')
+  if ($_match.Success) {
+    return $_match.Groups[1].Value.Trim()
+  }
+
+  return $null
+}
+
 function Connect-Outlook {
   <#
     .SYNOPSIS
