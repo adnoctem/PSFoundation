@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/adnoctem/PSFoundation/compare/v1.1.0...v1.2.0) (2026-08-18)
+
+### Features
+
+* **src:** add font, service, and scheduled-task state primitives ([8c8cce7](https://github.com/adnoctem/PSFoundation/commit/8c8cce7f2942c30780be01274f2e678d8bdbf44e))
+
 ## [1.1.0](https://github.com/adnoctem/PSFoundation/compare/v1.0.1...v1.1.0) (2026-08-18)
 
 ### Features
