@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/adnoctem/PSFoundation/compare/v1.2.0...v1.3.0) (2026-08-21)
+
+### Features
+
+* **src:** add Get-TransportMessageId for transport header parsing ([95e40ef](https://github.com/adnoctem/PSFoundation/commit/95e40ef4a270978dd79b3aa624b4e3fc19dda640))
+
 ## [1.2.0](https://github.com/adnoctem/PSFoundation/compare/v1.1.0...v1.2.0) (2026-08-18)
 
 ### Features
