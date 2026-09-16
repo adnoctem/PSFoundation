@@ -4,10 +4,12 @@ Contributions are welcome via GitHub's Pull Requests. This document outlines the
 
 ## Building
 
-The project uses the `PSFoundation.ps1` launcher script in the repository root to drive all development workflows. No external build tools (Make, CMake, etc.) are required — only PowerShell and the launcher script.
+The project uses the `PSFoundation.ps1` launcher script in the repository root to drive all development workflows. No external build tools
+(Make, CMake, etc.) are required — only PowerShell and the launcher script.
 
 Before running anything else, you must initialize the project. This downloads the PowerShell module dependencies declared in
-[`src/PSFoundation.psd1`](../src/PSFoundation.psd1) and the dev dependencies in [`tools/dev-dependencies.json`](../tools/dev-dependencies.json):
+[`src/PSFoundation.psd1`](../src/PSFoundation.psd1) and the dev dependencies in
+[`tools/dev-dependencies.json`](../tools/dev-dependencies.json):
 
 ```pwsh
 .\PSFoundation.ps1 init
@@ -27,7 +29,8 @@ The launcher maps short, familiar command names to the scripts located in the [`
 | `deps`    | `dependencies`                     | `tools/dependencies.ps1` | Check and update PowerShell Gallery dependencies    |
 | `release` | `publish`                          | `tools/release.ps1`      | Publish module to PowerShell Gallery                |
 
-Any arguments supplied after the command are forwarded directly to the underlying script. For example, `.\PSFoundation.ps1 format -Check` is equivalent to running `.\tools\format.ps1 -Check`.
+Any arguments supplied after the command are forwarded directly to the underlying script. For example, `.\PSFoundation.ps1 format -Check` is
+equivalent to running `.\tools\format.ps1 -Check`.
 
 ### Source Formatting
 
@@ -44,8 +47,8 @@ To check formatting without modifying files, suitable for CI jobs and pre-commit
 ```
 
 The formatter delegates whitespace, brace, indentation, and casing rules entirely to PSScriptAnalyzer via
-[`PSScriptAnalyzerSettings.psd1`](../PSScriptAnalyzerSettings.psd1) and performs no repository-specific
-post-processing beyond encoding and line-ending normalization on write.
+[`PSScriptAnalyzerSettings.psd1`](../PSScriptAnalyzerSettings.psd1) and performs no repository-specific post-processing beyond encoding and
+line-ending normalization on write.
 
 Output defaults to:
 
@@ -62,9 +65,8 @@ To limit the scope, pass explicit paths:
 
 ### Linting
 
-Run PSScriptAnalyzer against all PowerShell sources under the repository root (the `src/` and `tests/`
-directories, the `tools/` scripts, and `PSFoundation.ps1`). The `.git`, `.idea`, `dist`, `build`, and `secrets`
-directories are excluded by default:
+Run PSScriptAnalyzer against all PowerShell sources under the repository root (the `src/` and `tests/` directories, the `tools/` scripts,
+and `PSFoundation.ps1`). The `.git`, `.idea`, `dist`, `build`, and `secrets` directories are excluded by default:
 
 ```pwsh
 .\PSFoundation.ps1 lint
@@ -76,8 +78,8 @@ Target specific files or directories:
 .\PSFoundation.ps1 lint -Path ./src,./tests
 ```
 
-The linter exits with code `1` when any analyzer findings remain, making it suitable for CI and pre-commit usage.
-Findings are printed as a table listing the rule name, severity, file, line, and message.
+The linter exits with code `1` when any analyzer findings remain, making it suitable for CI and pre-commit usage. Findings are printed as a
+table listing the rule name, severity, file, line, and message.
 
 ### Building Distribution Archives
 
@@ -87,8 +89,8 @@ Create clean deployment archives containing the `src/` directory with its relati
 .\PSFoundation.ps1 build
 ```
 
-By default, both a `.zip` and a `.tar.gz` archive are written to the `dist/` directory. Existing archives with the
-same names are overwritten.
+By default, both a `.zip` and a `.tar.gz` archive are written to the `dist/` directory. Existing archives with the same names are
+overwritten.
 
 Build only a specific format:
 
@@ -104,16 +106,15 @@ Override the output directory or archive base name:
 
 ### Pre-Commit Hooks
 
-The repository ships a pre-configured [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) that runs formatting and
-linting checks automatically before each commit. After installing [pre-commit](https://pre-commit.com/), activate the
-hooks from the repository root:
+The repository ships a pre-configured [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) that runs formatting and linting checks
+automatically before each commit. After installing [pre-commit](https://pre-commit.com/), activate the hooks from the repository root:
 
 ```pwsh
 pre-commit install
 ```
 
-The hooks invoke `.\PSFoundation.ps1 format -Check` and `.\PSFoundation.ps1 lint` with zero additional configuration beyond having
-run `.\PSFoundation.ps1 init` to install the module dependencies.
+The hooks invoke `.\PSFoundation.ps1 format -Check` and `.\PSFoundation.ps1 lint` with zero additional configuration beyond having run
+`.\PSFoundation.ps1 init` to install the module dependencies.
 
 ### Running Tests
 
@@ -129,21 +130,20 @@ Run a specific test file:
 .\PSFoundation.ps1 test -Path .\tests\registry.Tests.ps1
 ```
 
-Tests require Pester 5.0 or higher, which is installed automatically with `.\PSFoundation.ps1 init`. The test runner exits
-with the number of failed tests as its exit code, making it suitable for CI pipelines.
+Tests require Pester 5.0 or higher, which is installed automatically with `.\PSFoundation.ps1 init`. The test runner exits with the number
+of failed tests as its exit code, making it suitable for CI pipelines.
 
 ### Publishing a Release
 
-The release pipeline is driven by [semantic-release](../.releaserc) (see [`.github/workflows/release.yaml`](../.github/workflows/release.yaml)):
+The release pipeline is driven by [semantic-release](../.releaserc) (see
+[`.github/workflows/release.yaml`](../.github/workflows/release.yaml)):
 
-1. `tools/release.ps1 -Prepare -Version <next>` (invoked by the `@semantic-release/exec` plugin) writes the resolved
-   version into `src/PSFoundation.psd1` — `ModuleVersion`, plus the `Prerelease` key under `PSData` for suffix versions
-   like `1.1.0-beta.1` — rebuilds the `dist/` archives and regenerates `dist/CHECKSUMS_SHA256.txt`. The manifest change
-   is committed as part of the release commit, so the module source, the GitHub release bundles and the PSGallery
-   package always carry the same version.
-2. `tools/release.ps1 -Version <next>` publishes the module from `./src` to the PowerShell Gallery. The module manifest
-   is the single source of truth for the published version; a supplied `-Version` must match it or the publish is
-   aborted.
+1. `tools/release.ps1 -Prepare -Version <next>` (invoked by the `@semantic-release/exec` plugin) writes the resolved version into
+   `src/PSFoundation.psd1` — `ModuleVersion`, plus the `Prerelease` key under `PSData` for suffix versions like `1.1.0-beta.1` — rebuilds
+   the `dist/` archives and regenerates `dist/CHECKSUMS_SHA256.txt`. The manifest change is committed as part of the release commit, so the
+   module source, the GitHub release bundles and the PSGallery package always carry the same version.
+2. `tools/release.ps1 -Version <next>` publishes the module from `./src` to the PowerShell Gallery. The module manifest is the single source
+   of truth for the published version; a supplied `-Version` must match it or the publish is aborted.
 
 Running the prepare phase manually:
 
@@ -163,15 +163,14 @@ Skip the build step when archives are already present:
 .\PSFoundation.ps1 release -Version 1.0.0 -NuGetApiKey $env:NUGET_API_KEY -SkipBuild
 ```
 
-The release tool generates `dist/CHECKSUMS_SHA256.txt` for all built archives, suitable for CI artifact validation
-and the semantic-release asset pipeline defined in [`.releaserc`](../.releaserc).
+The release tool generates `dist/CHECKSUMS_SHA256.txt` for all built archives, suitable for CI artifact validation and the semantic-release
+asset pipeline defined in [`.releaserc`](../.releaserc).
 
 ## Commit Message Format
 
 This specification is inspired by and supersedes the **AngularJS commit message format**.
 
-We have very precise rules over how our Git commit messages must be formatted.
-This format leads to **easier to read commit history**.
+We have very precise rules over how our Git commit messages must be formatted. This format leads to **easier to read commit history**.
 
 Each commit message consists of a **header**, a **body**, and a **footer**.
 
@@ -185,12 +184,11 @@ Each commit message consists of a **header**, a **body**, and a **footer**.
 
 The `header` is mandatory and must conform to the [Commit Message Header](#commit-header) format.
 
-The `body` is mandatory for all commits except for those of type "docs".
-When the body is present it must be at least 20 characters long and must conform to
-the [Commit Message Body](#commit-body) format.
+The `body` is mandatory for all commits except for those of type "docs". When the body is present it must be at least 20 characters long and
+must conform to the [Commit Message Body](#commit-body) format.
 
-The `footer` is optional. The [Commit Message Footer](#commit-footer) format describes what the footer is used for and
-the structure it must have.
+The `footer` is optional. The [Commit Message Footer](#commit-footer) format describes what the footer is used for and the structure it must
+have.
 
 ### <a name="commit-header"></a>Commit Message Header
 
@@ -241,16 +239,13 @@ Use the summary field to provide a succinct description of the change:
 
 Just as in the summary, use the imperative, present tense: "fix" not "fixed" nor "fixes".
 
-Explain the motivation for the change in the commit message body. This commit message should explain _why_ you are
-making the change.
-You can include a comparison of the previous behavior with the new behavior in order to illustrate the impact of the
-change.
+Explain the motivation for the change in the commit message body. This commit message should explain _why_ you are making the change. You
+can include a comparison of the previous behavior with the new behavior in order to illustrate the impact of the change.
 
 #### <a name="commit-footer"></a>Commit Message Footer
 
-The footer can contain information about breaking changes and deprecations and is also the place to reference GitHub
-issues, Jira tickets, and other PRs that this commit closes or is related to.
-For example:
+The footer can contain information about breaking changes and deprecations and is also the place to reference GitHub issues, Jira tickets,
+and other PRs that this commit closes or is related to. For example:
 
 ```text
 BREAKING CHANGE: <breaking change summary>
@@ -272,11 +267,11 @@ DEPRECATED: <what is deprecated>
 Closes #<pr number>
 ```
 
-Breaking Change section should start with the phrase "BREAKING CHANGE: " followed by a summary of the breaking change, a
-blank line, and a detailed description of the breaking change that also includes migration instructions.
+Breaking Change section should start with the phrase "BREAKING CHANGE: " followed by a summary of the breaking change, a blank line, and a
+detailed description of the breaking change that also includes migration instructions.
 
-Similarly, a Deprecation section should start with "DEPRECATED: " followed by a short description of what is deprecated,
-a blank line, and a detailed description of the deprecation that also mentions the recommended update path.
+Similarly, a Deprecation section should start with "DEPRECATED: " followed by a short description of what is deprecated, a blank line, and a
+detailed description of the deprecation that also mentions the recommended update path.
 
 #### Revert commits
 
@@ -294,8 +289,7 @@ The content of the commit message body should contain:
 3. Add your GitHub username to the [`AUTHORS`](../.github/AUTHORS) and [`CODEOWNERS`](../.github/CODEOWNERS) files
 4. Submit a pull request
 
-_**NOTE**_: In order to make testing and merging of PRs easier, please submit changes to unrelated areas of the
-repository in separate PRs.
+_**NOTE**_: In order to make testing and merging of PRs easier, please submit changes to unrelated areas of the repository in separate PRs.
 
 ### Technical Requirements
 
@@ -310,12 +304,12 @@ repository in separate PRs.
 The `PSFoundation` PowerShell module declared in [`src/PSFoundation.psd1`](../src/PSFoundation.psd1) follows [SemVer](https://semver.org/).
 
 When cutting a release through the automated pipeline, the version is determined by semantic-release from the
-[conventional commits](#commit-message-format) and written into the manifest automatically by `tools/release.ps1
--Prepare`; no manual bump is required. A manual bump is only needed when publishing outside the pipeline. The manifest
-must always stay in sync with the highest released version.
+[conventional commits](#commit-message-format) and written into the manifest automatically by `tools/release.ps1 -Prepare`; no manual bump
+is required. A manual bump is only needed when publishing outside the pipeline. The manifest must always stay in sync with the highest
+released version.
 
-Any change to the module source (`src/`), the module manifest, or a change that alters the public API surface of the
-module requires a version bump in the manifest. Documentation-only changes do not require a bump.
+Any change to the module source (`src/`), the module manifest, or a change that alters the public API surface of the module requires a
+version bump in the manifest. Documentation-only changes do not require a bump.
 
 Breaking (backwards incompatible) changes to the module must:
 
@@ -323,5 +317,4 @@ Breaking (backwards incompatible) changes to the module must:
 2. Describe the breaking change and migration instructions in the commit message footer
 3. Update the module release notes if they exist
 
-New features and non-breaking enhancements bump the MINOR version. Bugfixes and documentation bumps increment the
-PATCH version.
+New features and non-breaking enhancements bump the MINOR version. Bugfixes and documentation bumps increment the PATCH version.

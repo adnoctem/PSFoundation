@@ -1,26 +1,49 @@
-#######################################
-# EDITORS
-#######################################
+# .gitignore - PowerShell module
+
+###> general/ai ###
+
+# personal harness settings
+.claude/
+.codex/
+.agents/
+.openaxis/
+.omc/
+.omx/
+
+# assistants and IDEs
+.cursor/
+.windsurf/
+.cline/
+.roo/
+.aide/
+.cody/
+.continue/
+
+# local integrations
+.ollama/
+.openwebui/
+.crewai/
+.autogen/
+###>
+
+###> general/editors ###
 
 # IntelliJ IDEA
-.idea/*
-!.idea/dataSources.xml
+.idea/
 
 # VS Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+.vscode/
+###>
 
-# Distribution folder
-dist/*
-build/*
+###> general/secret ###
 
-# temporary files
-secrets/*
-dist/*
-build/*
+# secrets
+secrets/
+###>
 
-# CI artifacts
-ci-modules-*.json
+###> source/temp ###
+
+# distribution
+dist/
+build/
+###>

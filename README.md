@@ -17,16 +17,14 @@
 [![PreCommit](https://img.shields.io/badge/PreCommit-enabled-brightgreen?logo=precommit&logoColor=FAB040)][precommit]
 [![Super-Linter](https://github.com/adnoctem/PSFoundation/actions/workflows/superlint.yaml/badge.svg)][superlinter_action]
 
-`PSFoundation` is an open-source [MIT][license]-licensed [PowerShell][powershell] module library written and maintained
-by the [Ad Noctem Collective][org] for Windows system administration, configuration management, and automation. The module
-targets both desktop Windows installations and Windows Server environments and supports [PowerShell][powershell] 5.1 and
-above, including Windows PowerShell 5.1 as well as newer PowerShell 7+ releases. It is published to the
-[PowerShell Gallery][psgallery_package] for easy discovery and installation.
+`PSFoundation` is an open-source [MIT][license]-licensed [PowerShell][powershell] module library written and maintained by the [Ad Noctem
+Collective][org] for Windows system administration, configuration management, and automation. The module targets both desktop Windows
+installations and Windows Server environments and supports [PowerShell][powershell] 5.1 and above, including Windows PowerShell 5.1 as well
+as newer PowerShell 7+ releases. It is published to the [PowerShell Gallery][psgallery_package] for easy discovery and installation.
 
-The [`src`](src) directory contains the module source code — a collection of PowerShell functions organized by domain
-(registry, networking, security, packages, system, etc.) — bundled together as a single importable module. The
-[`tools`](tools) directory contains the repository's development tooling for building, formatting, linting, testing,
-and publishing the module.
+The [`src`](src) directory contains the module source code — a collection of PowerShell functions organized by domain (registry, networking,
+security, packages, system, etc.) — bundled together as a single importable module. The [`tools`](tools) directory contains the repository's
+development tooling for building, formatting, linting, testing, and publishing the module.
 
 ### Module Coverage
 
@@ -90,11 +88,14 @@ Install-Module -Name PSFoundation
 
 ### Contributing
 
-Contributions are welcome via GitHub's Pull Requests. Fork the repository and implement your changes within the forked repository, after that you may submit a [Pull Request][gh_pr_fork_docs]. Refer to our [documentation for contributors][contributing] for contributing guidelines, commit message formats and versioning tips.
+Contributions are welcome via GitHub's Pull Requests. Fork the repository and implement your changes within the forked repository, after
+that you may submit a [Pull Request][gh_pr_fork_docs]. Refer to our [documentation for contributors][contributing] for contributing
+guidelines, commit message formats and versioning tips.
 
 ### Maintainers
 
-This project is owned and maintained by [Ad Noctem Collective](https://github.com/adnoctem) refer to the [`AUTHORS`][authors] or [`CODEOWNERS`][owners] for more information. You may also use the linked contact details to reach out directly.
+This project is owned and maintained by [Ad Noctem Collective](https://github.com/adnoctem) refer to the [`AUTHORS`][authors] or
+[`CODEOWNERS`][owners] for more information. You may also use the linked contact details to reach out directly.
 
 ### Copyright
 
@@ -112,7 +113,8 @@ _Assets provided by:_ **[Microsoft Corporation][microsoft]**
 [org]: https://github.com/adnoctem
 [microsoft]: https://www.microsoft.com/
 [powershell]: https://github.com/PowerShell/PowerShell
-[gh_pr_fork_docs]: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork
+[gh_pr_fork_docs]:
+  https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork
 [github_releases]: https://github.com/adnoctem/PSFoundation/releases
 [github_commits]: https://github.com/adnoctem/PSFoundation/commits/main/
 [psgallery_package]: https://www.powershellgallery.com/packages/PSFoundation
