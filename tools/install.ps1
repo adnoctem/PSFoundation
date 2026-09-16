@@ -1,4 +1,4 @@
-#Requires -Version 5.0
+﻿#Requires -Version 5.0
 
 <#
 .SYNOPSIS
@@ -98,7 +98,8 @@ if ($Undo) {
   $item = Get-Item -LiteralPath $installPath -Force
   $isSymlink = ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint
 
-  if ($PSCmdlet.ShouldProcess($installPath, "Remove $($isSymlink ? 'symlink' : 'copy')")) {
+  $removalKind = if ($isSymlink) { 'symlink' } else { 'copy' }
+  if ($PSCmdlet.ShouldProcess($installPath, "Remove $removalKind")) {
     if ($isSymlink) {
       try {
         [System.IO.Directory]::Delete($installPath)

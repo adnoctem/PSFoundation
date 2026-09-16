@@ -12,6 +12,10 @@
   published stable version of each module, and reports which declared versions
   are out of date.
 
+  Exact RequiredVersion pins take precedence over minimum versions. Updates
+  are scoped to the dependency declaration, and both proposed files are parsed
+  and checked before either file is written.
+
   In update mode (the default) the declared versions are bumped in place and a
   pull request is opened against the default branch with the version diffs. The
   pull request is picked up by the repository's regular CI on its own. No other
@@ -56,16 +60,6 @@ param(
   [switch]$Check
 )
 
-$ErrorActionPreference = 'Stop'
-
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-$RepoRoot = Split-Path -Path $PSScriptRoot -Parent
-$ModuleManifestPath = Join-Path -Path $RepoRoot -ChildPath 'src/PSFoundation.psd1'
-$DevDependenciesPath = Join-Path -Path $PSScriptRoot -ChildPath 'dev-dependencies.json'
-
-$PSGalleryQueryUri = "https://www.powershellgallery.com/api/v2/FindPackagesById()?id='{0}'"
-
 function Get-PSGalleryLatestVersion {
   [CmdletBinding()]
   param(
@@ -78,7 +72,7 @@ function Get-PSGalleryLatestVersion {
     $headers['X-NuGet-ApiKey'] = $env:PSGALLERY_API_KEY
   }
 
-  $uri = $PSGalleryQueryUri -f [uri]::EscapeDataString($Name)
+  $uri = "https://www.powershellgallery.com/api/v2/FindPackagesById()?id='{0}'" -f [uri]::EscapeDataString($Name)
   $response = Invoke-WebRequest -Uri $uri -Headers $headers -UseBasicParsing
 
   $document = [xml]$response.Content
@@ -127,77 +121,195 @@ function Get-GitHubToken {
   return $null
 }
 
-function Update-VersionLine {
-  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Pure in-memory string transform; no system state is modified.')]
+function Get-DependencyDocument {
+  [CmdletBinding()]
   param(
     [Parameter(Mandatory = $true)]
-    $Lines,
+    [string]$ManifestContent,
 
     [Parameter(Mandatory = $true)]
-    [string]$NamePattern,
-
-    [Parameter(Mandatory = $true)]
-    [string]$VersionPattern,
-
-    [Parameter(Mandatory = $true)]
-    [string]$NewVersion
+    [string]$DevContent
   )
 
-  $updated = New-Object System.Collections.Generic.List[string]
-  foreach ($line in $Lines) {
-    $updated.Add($line)
+  $tokens = $null
+  $parseErrors = $null
+  $ast = [System.Management.Automation.Language.Parser]::ParseInput($ManifestContent, [ref]$tokens, [ref]$parseErrors)
+  if ($parseErrors.Count -gt 0) {
+    throw "Invalid dependency manifest: $($parseErrors[0].Message)"
   }
+  $manifestAst = $ast.EndBlock.Statements[0].PipelineElements[0].Expression
+  if ($ast.EndBlock.Statements.Count -ne 1 -or $manifestAst -isnot [System.Management.Automation.Language.HashtableAst]) {
+    throw 'The dependency manifest must contain a single data hashtable.'
+  }
+  $manifest = $manifestAst.SafeGetValue()
+  if (-not $DevContent.TrimStart().StartsWith('[')) {
+    throw 'The dev dependency document must be a JSON array.'
+  }
+  # Windows PowerShell 5.1 emits a JSON array as one pipeline object; normalize
+  # after assignment so both engines expose a flat array, including [] and [one].
+  $devDependencies = ConvertFrom-Json -InputObject $DevContent -ErrorAction Stop
+  if ($null -eq $devDependencies) {
+    $devDependencies = @()
+  }
+  else {
+    $devDependencies = @($devDependencies)
+  }
+  $declared = New-Object System.Collections.Generic.List[object]
 
-  for ($i = 0; $i -lt $updated.Count; $i++) {
-    if ($updated[$i] -match $NamePattern) {
-      for ($j = $i + 1; $j -lt $updated.Count -and $j -le $i + 3; $j++) {
-        if ($updated[$j] -match $VersionPattern) {
-          $updated[$j] = $updated[$j] -replace $VersionPattern, ('${1}' + $NewVersion + '${2}')
-          break
-        }
+  foreach ($source in @('runtime', 'dev')) {
+    $modules = if ($source -eq 'runtime') { @($manifest.RequiredModules) } else { $devDependencies }
+    $index = 0
+    foreach ($module in $modules) {
+      $name = if ($source -eq 'runtime') {
+        if ($module -is [string]) { $module } else { $module.ModuleName }
       }
+      else { $module.Name }
+      if (-not $name) {
+        throw "Missing module name in $source dependency $index."
+      }
+      $field = if ($module.RequiredVersion) { 'RequiredVersion' }
+      elseif ($source -eq 'runtime' -and $module.ModuleVersion) { 'ModuleVersion' }
+      elseif ($source -eq 'dev' -and $module.MinimumVersion) { 'MinimumVersion' }
+      else { $null }
+      $declared.Add([pscustomobject]@{
+          Name = $name
+          Source = $source
+          Index = $index
+          VersionField = $field
+          DeclaredVersion = if ($field) { [string]$module.$field } else { $null }
+        })
+      $index++
     }
   }
 
-  return $updated.ToArray()
+  return [pscustomobject]@{
+    ManifestAst = $manifestAst
+    DevDependencies = $devDependencies
+    Dependencies = $declared.ToArray()
+  }
 }
+
+function Get-DependencyUpdate {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ManifestContent,
+
+    [Parameter(Mandatory = $true)]
+    [string]$DevContent,
+
+    [Parameter(Mandatory = $true)]
+    [object[]]$Updates
+  )
+
+  $document = Get-DependencyDocument -ManifestContent $ManifestContent -DevContent $DevContent
+  $edits = New-Object System.Collections.Generic.List[object]
+  $expected = @{}
+  $devChanged = $false
+
+  foreach ($update in $Updates) {
+    $declarations = @($document.Dependencies | Where-Object { $_.Source -eq $update.Source -and $_.Name -eq $update.Name })
+    if ($declarations.Count -ne 1) {
+      throw "Expected exactly one $($update.Source) declaration for '$($update.Name)'; found $($declarations.Count)."
+    }
+    $dependency = $declarations[0]
+    $field = $dependency.VersionField
+    if (-not $field -or $field -ne $update.VersionField -or $dependency.DeclaredVersion -cne $update.DeclaredVersion) {
+      throw "The declared version field for '$($update.Name)' does not match the proposed update."
+    }
+    $latest = [string]$update.LatestVersion
+    if ([version]$latest -le [version]$dependency.DeclaredVersion) {
+      throw "The proposed version for '$($update.Name)' must be newer than the declared version."
+    }
+    $key = '{0}:{1}' -f $dependency.Source, $dependency.Index
+    if ($expected.ContainsKey($key)) {
+      throw "Duplicate update for '$($update.Name)'."
+    }
+    $expected[$key] = $latest
+
+    if ($dependency.Source -eq 'dev') {
+      $document.DevDependencies[$dependency.Index].$field = $latest
+      $devChanged = $true
+      continue
+    }
+
+    # Search only RequiredModules, never root metadata, comments, or adjacent declarations.
+    $requiredModules = @($document.ManifestAst.KeyValuePairs | Where-Object { $_.Item1.SafeGetValue() -eq 'RequiredModules' })
+    $tables = @($requiredModules[0].Item2.FindAll({
+          param($node)
+          $node -is [System.Management.Automation.Language.HashtableAst]
+        }, $false) | Where-Object { $_.SafeGetValue().ModuleName -eq $dependency.Name })
+    if ($tables.Count -ne 1) {
+      throw "Cannot locate a unique RequiredModules declaration for '$($dependency.Name)'."
+    }
+    $pair = @($tables[0].KeyValuePairs | Where-Object { $_.Item1.SafeGetValue() -eq $field })
+    $valueAst = $pair[0].Item2.PipelineElements[0].Expression
+    if ($valueAst -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or $valueAst.Value -cne $dependency.DeclaredVersion) {
+      throw "The $field value for '$($dependency.Name)' must be a literal version string."
+    }
+    $quote = $valueAst.Extent.Text.Substring(0, 1)
+    if ($quote -notin @("'", '"')) {
+      throw "The $field value for '$($dependency.Name)' must be quoted."
+    }
+    $edits.Add([pscustomobject]@{
+        Start = $valueAst.Extent.StartOffset
+        Length = $valueAst.Extent.EndOffset - $valueAst.Extent.StartOffset
+        Text = $quote + $latest + $quote
+      })
+  }
+
+  # Apply offsets from the end so earlier extents remain valid after longer bumps.
+  foreach ($edit in ($edits | Sort-Object Start -Descending)) {
+    $ManifestContent = $ManifestContent.Remove($edit.Start, $edit.Length).Insert($edit.Start, $edit.Text)
+  }
+  if ($devChanged) {
+    $DevContent = (ConvertTo-Json -InputObject @($document.DevDependencies) -Depth 100) -replace '\r?\n', "`r`n"
+    $DevContent += "`r`n"
+  }
+
+  # Reparse both proposed documents before the caller can write or stage either one.
+  $proposed = Get-DependencyDocument -ManifestContent $ManifestContent -DevContent $DevContent
+  if ($proposed.Dependencies.Count -ne $document.Dependencies.Count) {
+    throw 'Dependency declarations changed unexpectedly while preparing updates.'
+  }
+  for ($i = 0; $i -lt $document.Dependencies.Count; $i++) {
+    $before = $document.Dependencies[$i]
+    $after = $proposed.Dependencies[$i]
+    $key = '{0}:{1}' -f $before.Source, $before.Index
+    $version = if ($expected.ContainsKey($key)) { $expected[$key] } else { $before.DeclaredVersion }
+    if ($before.Name -cne $after.Name -or $before.Source -ne $after.Source -or $before.VersionField -ne $after.VersionField -or $version -cne $after.DeclaredVersion) {
+      throw "Dependency update verification failed for '$($before.Name)'."
+    }
+  }
+
+  return [pscustomobject]@{
+    ManifestContent = $ManifestContent
+    DevContent = $DevContent
+  }
+}
+
+# Dot-sourcing exposes the helpers for tests without checking, writing, or publishing.
+if ($MyInvocation.InvocationName -eq '.') {
+  return
+}
+
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$RepoRoot = Split-Path -Path $PSScriptRoot -Parent
+$ModuleManifestPath = Join-Path -Path $RepoRoot -ChildPath 'src/PSFoundation.psd1'
+$DevDependenciesPath = Join-Path -Path $PSScriptRoot -ChildPath 'dev-dependencies.json'
 
 Write-Host 'Checking declared PowerShell module dependencies against the PowerShell Gallery...' -ForegroundColor Cyan
 
-$manifest = Import-PowerShellDataFile -LiteralPath $ModuleManifestPath
-
-$declared = New-Object System.Collections.Generic.List[object]
-foreach ($module in $manifest.RequiredModules) {
-  if ($module -is [string]) {
-    $declared.Add([pscustomobject]@{
-        Name = $module
-        Source = 'runtime'
-        DeclaredVersion = $null
-      })
-  }
-  else {
-    $declared.Add([pscustomobject]@{
-        Name = $module.ModuleName
-        Source = 'runtime'
-        DeclaredVersion = $module.ModuleVersion
-      })
-  }
-}
-
-$devDependencies = Get-Content -LiteralPath $DevDependenciesPath -Raw | ConvertFrom-Json
-foreach ($module in $devDependencies) {
-  $declared.Add([pscustomobject]@{
-      Name = $module.Name
-      Source = 'dev'
-      DeclaredVersion = if ($module.RequiredVersion) { $module.RequiredVersion } else { $module.MinimumVersion }
-    })
-}
+$manifestContent = [System.IO.File]::ReadAllText($ModuleManifestPath)
+$devContent = [System.IO.File]::ReadAllText($DevDependenciesPath)
+$document = Get-DependencyDocument -ManifestContent $manifestContent -DevContent $devContent
 
 $outdated = New-Object System.Collections.Generic.List[object]
 
 Write-Host ('  {0,-24} {1,-8} {2,-12} {3,-12} {4}' -f 'Name', 'Source', 'Declared', 'Latest', 'Status')
 
-foreach ($dep in $declared) {
+foreach ($dep in $document.Dependencies) {
   $latest = Get-PSGalleryLatestVersion -Name $dep.Name
 
   if (-not $latest) {
@@ -214,6 +326,7 @@ foreach ($dep in $declared) {
     $outdated.Add([pscustomobject]@{
         Name = $dep.Name
         Source = $dep.Source
+        VersionField = $dep.VersionField
         DeclaredVersion = $dep.DeclaredVersion
         LatestVersion = $latest
       })
@@ -247,25 +360,12 @@ if (-not $githubToken) {
   throw 'No GitHub token found; set GH_TOKEN or GITHUB_TOKEN to push the branch and open the pull request.'
 }
 
-foreach ($dep in $outdated) {
-  $escapedName = [regex]::Escape($dep.Name)
-
-  if ($dep.Source -eq 'runtime') {
-    $namePattern = "ModuleName\s*=\s*['`"]$escapedName['`"]"
-    $versionPattern = "(ModuleVersion\s*=\s*['`"])[^'`"]+(['`"])"
-    $filePath = $ModuleManifestPath
-    $encoding = New-Object System.Text.UTF8Encoding($true)
-  }
-  else {
-    $namePattern = '"Name"\s*:\s*"' + $escapedName + '"'
-    $versionPattern = '("(?:MinimumVersion|RequiredVersion)"\s*:\s*")[^"]+(")'
-    $filePath = $DevDependenciesPath
-    $encoding = New-Object System.Text.UTF8Encoding($false)
-  }
-
-  $lines = @(Get-Content -LiteralPath $filePath)
-  $lines = Update-VersionLine -Lines $lines -NamePattern $namePattern -VersionPattern $versionPattern -NewVersion $dep.LatestVersion
-  [System.IO.File]::WriteAllLines($filePath, $lines, $encoding)
+$proposed = Get-DependencyUpdate -ManifestContent $manifestContent -DevContent $devContent -Updates $outdated.ToArray()
+if ($proposed.ManifestContent -cne $manifestContent) {
+  [System.IO.File]::WriteAllText($ModuleManifestPath, $proposed.ManifestContent, (New-Object System.Text.UTF8Encoding($true)))
+}
+if ($proposed.DevContent -cne $devContent) {
+  [System.IO.File]::WriteAllText($DevDependenciesPath, $proposed.DevContent, (New-Object System.Text.UTF8Encoding($false)))
 }
 
 $branch = 'chore/psdeps/{0}' -f (Get-Date -Format 'yyyyMMdd-HHmmss')
