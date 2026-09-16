@@ -242,13 +242,13 @@ try {{
   }
 
   $startInfo = @{
-    FilePath = $hostExe
-    ArgumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand)
-    Verb = 'RunAs'
+    FilePath         = $hostExe
+    ArgumentList     = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand)
+    Verb             = 'RunAs'
     WorkingDirectory = $workingDir
-    PassThru = $true
-    Wait = $true
-    ErrorAction = 'Stop'
+    PassThru         = $true
+    Wait             = $true
+    ErrorAction      = 'Stop'
   }
 
   try {

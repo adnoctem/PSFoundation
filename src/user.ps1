@@ -20,9 +20,9 @@
   $isAdmin = (New-Object System.Security.Principal.WindowsPrincipal($user)).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 
   return @{
-    UserName = $user.Name
+    UserName        = $user.Name
     IsAdministrator = $isAdmin
-    SID = $user.User.Value
+    SID             = $user.User.Value
   }
 }
 
@@ -223,7 +223,7 @@ function Get-ADAccountLockoutSource {
 
     $invokeParams = @{
       ComputerName = $pdc
-      ScriptBlock = {
+      ScriptBlock  = {
         $props = @(
           'TimeCreated',
           @{ Label = 'UserName'; Expression = { $_.Properties[0].Value } },
@@ -233,7 +233,7 @@ function Get-ADAccountLockoutSource {
           Where-Object { $_.Properties[0].Value -like $Using:UserName } |
           Select-Object -Property $props
       }
-      ErrorAction = 'Stop'
+      ErrorAction  = 'Stop'
     }
     if ($Credential) {
       $invokeParams.Credential = $Credential
@@ -294,11 +294,11 @@ function Get-ADFSMORoleHolder {
     }
 
     [PSCustomObject]@{
-      SchemaMaster = $forestRoles.SchemaMaster
-      DomainNamingMaster = $forestRoles.DomainNamingMaster
+      SchemaMaster         = $forestRoles.SchemaMaster
+      DomainNamingMaster   = $forestRoles.DomainNamingMaster
       InfrastructureMaster = $domainRoles.InfrastructureMaster
-      RIDMaster = $domainRoles.RIDMaster
-      PDCEmulator = $domainRoles.PDCEmulator
+      RIDMaster            = $domainRoles.RIDMaster
+      PDCEmulator          = $domainRoles.PDCEmulator
     }
   }
   catch {

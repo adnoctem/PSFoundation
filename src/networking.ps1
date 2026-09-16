@@ -41,8 +41,8 @@ function Resolve-IPv6PrefixData {
     }
 
     return [PSCustomObject]@{
-      Address = $ipv6
-      Prefix = [System.Net.IPAddress]::new($prefixBytes).ToString()
+      Address      = $ipv6
+      Prefix       = [System.Net.IPAddress]::new($prefixBytes).ToString()
       PrefixLength = $prefixLength
     }
   }
@@ -125,11 +125,11 @@ function Get-DefaultNetworkAdapter {
   }
 
   return [PSCustomObject]@{
-    Name = $netAdapter.Name
-    ifIndex = $defaultRoute.ifIndex
+    Name          = $netAdapter.Name
+    ifIndex       = $defaultRoute.ifIndex
     PhysicalMedia = $netAdapter.PhysicalMediaType
-    NetAdapter = $netAdapter
-    CimConfig = $cimConfig
+    NetAdapter    = $netAdapter
+    CimConfig     = $cimConfig
   }
 }
 
@@ -887,12 +887,12 @@ function Test-RemoteHostReachability {
       }
 
       $hostResult = [ordered]@{
-        ComputerName = $name
-        DNSResolved = $dnsOk
-        ICMP = $icmpOk
-        WSMAN = $wsmanOk
+        ComputerName   = $name
+        DNSResolved    = $dnsOk
+        ICMP           = $icmpOk
+        WSMAN          = $wsmanOk
         RemoteRegistry = $regOk
-        WMIRPC = $wmiOk
+        WMIRPC         = $wmiOk
       }
 
       if ($IncludeRdp) {

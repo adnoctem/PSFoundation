@@ -172,10 +172,10 @@ function Get-DependencyDocument {
       elseif ($source -eq 'dev' -and $module.MinimumVersion) { 'MinimumVersion' }
       else { $null }
       $declared.Add([pscustomobject]@{
-          Name = $name
-          Source = $source
-          Index = $index
-          VersionField = $field
+          Name            = $name
+          Source          = $source
+          Index           = $index
+          VersionField    = $field
           DeclaredVersion = if ($field) { [string]$module.$field } else { $null }
         })
       $index++
@@ -183,9 +183,9 @@ function Get-DependencyDocument {
   }
 
   return [pscustomobject]@{
-    ManifestAst = $manifestAst
+    ManifestAst     = $manifestAst
     DevDependencies = $devDependencies
-    Dependencies = $declared.ToArray()
+    Dependencies    = $declared.ToArray()
   }
 }
 
@@ -252,9 +252,9 @@ function Get-DependencyUpdate {
       throw "The $field value for '$($dependency.Name)' must be quoted."
     }
     $edits.Add([pscustomobject]@{
-        Start = $valueAst.Extent.StartOffset
+        Start  = $valueAst.Extent.StartOffset
         Length = $valueAst.Extent.EndOffset - $valueAst.Extent.StartOffset
-        Text = $quote + $latest + $quote
+        Text   = $quote + $latest + $quote
       })
   }
 
@@ -284,7 +284,7 @@ function Get-DependencyUpdate {
 
   return [pscustomobject]@{
     ManifestContent = $ManifestContent
-    DevContent = $DevContent
+    DevContent      = $DevContent
   }
 }
 
@@ -324,11 +324,11 @@ foreach ($dep in $document.Dependencies) {
 
   if ($isOutdated) {
     $outdated.Add([pscustomobject]@{
-        Name = $dep.Name
-        Source = $dep.Source
-        VersionField = $dep.VersionField
+        Name            = $dep.Name
+        Source          = $dep.Source
+        VersionField    = $dep.VersionField
         DeclaredVersion = $dep.DeclaredVersion
-        LatestVersion = $latest
+        LatestVersion   = $latest
       })
     Write-Host ('  {0,-24} {1,-8} {2,-12} {3,-12} {4}' -f $dep.Name, $dep.Source, $dep.DeclaredVersion, $latest, 'OUTDATED') -ForegroundColor Yellow
   }

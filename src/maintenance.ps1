@@ -126,10 +126,10 @@ function Get-PSModule {
           if ($Name -and $r.Name -notmatch $Name) { continue }
 
           $results.Add([PSCustomObject]@{
-              Name = $r.Name
-              Version = $r.Version.ToString()
-              Repository = if ($r.Repository) { $r.Repository } else { 'Unknown' }
-              Scope = $Scope
+              Name          = $r.Name
+              Version       = $r.Version.ToString()
+              Repository    = if ($r.Repository) { $r.Repository } else { 'Unknown' }
+              Scope         = $Scope
               InstalledDate = $r.InstalledDate
             })
         }
@@ -162,10 +162,10 @@ function Get-PSModule {
           catch { $null }
 
           $results.Add([PSCustomObject]@{
-              Name = $m.Name
-              Version = $m.Version.ToString()
-              Repository = if ($m.RepositorySourceLocation) { $m.RepositorySourceLocation } else { 'Unknown' }
-              Scope = $Scope
+              Name          = $m.Name
+              Version       = $m.Version.ToString()
+              Repository    = if ($m.RepositorySourceLocation) { $m.RepositorySourceLocation } else { 'Unknown' }
+              Scope         = $Scope
               InstalledDate = $installedDate
             })
         }
@@ -278,9 +278,9 @@ function Remove-PSModule {
     foreach ($r in $resources) {
       if ($Name -and $r.Name -notmatch $Name) { continue }
       $allModules.Add([PSCustomObject]@{
-          Name = $r.Name
+          Name    = $r.Name
           Version = $r.Version
-          Path = $modulesPath
+          Path    = $modulesPath
         })
     }
   }
@@ -295,9 +295,9 @@ function Remove-PSModule {
         } |
         ForEach-Object {
           $allModules.Add([PSCustomObject]@{
-              Name = $_.Name
+              Name    = $_.Name
               Version = $_.Version
-              Path = $modulesPath
+              Path    = $modulesPath
             })
         }
     }
@@ -464,19 +464,19 @@ function Add-PSModule {
         try {
           if ($usePSResource) {
             $params = @{
-              Name = $modName
+              Name    = $modName
               Version = $modVersion
-              Scope = $modScope
+              Scope   = $modScope
             }
             Install-PSResource @params -ErrorAction Stop
           }
           else {
             $installParams = @{
-              Name = $modName
-              RequiredVersion = $modVersion
-              Scope = $modScope
-              Force = $true
-              AllowClobber = $true
+              Name               = $modName
+              RequiredVersion    = $modVersion
+              Scope              = $modScope
+              Force              = $true
+              AllowClobber       = $true
               SkipPublisherCheck = $true
             }
             Install-Module @installParams
@@ -512,7 +512,7 @@ function Add-PSModule {
     try {
       if ($usePSResource) {
         $params = @{
-          Name = $Name
+          Name  = $Name
           Scope = $Scope
         }
         if ($Version) {
@@ -525,10 +525,10 @@ function Add-PSModule {
       }
       else {
         $installParams = @{
-          Name = $Name
-          Scope = $Scope
-          Force = $Force
-          AllowClobber = $true
+          Name               = $Name
+          Scope              = $Scope
+          Force              = $Force
+          AllowClobber       = $true
           SkipPublisherCheck = $true
         }
         if ($Version) {

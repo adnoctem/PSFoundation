@@ -147,7 +147,7 @@ function Get-OutlookInstallation {
     }
 
     [PSCustomObject]@{
-      Path = $_resolvedDirectory
+      Path        = $_resolvedDirectory
       OutlookPath = if (Test-Path -LiteralPath $_outlookPath -PathType Leaf) { $_outlookPath } else { $null }
       ScanPstPath = if (Test-Path -LiteralPath $_scanPstPath -PathType Leaf) { $_scanPstPath } else { $null }
       ScanOstPath = if (Test-Path -LiteralPath $_scanOstPath -PathType Leaf) { $_scanOstPath } else { $null }
@@ -191,8 +191,8 @@ function Find-OutlookRepairTool {
     if (-not (Test-Path -LiteralPath $_path -PathType Leaf)) { continue }
 
     [PSCustomObject]@{
-      Name = $Name
-      Path = $_path
+      Name             = $Name
+      Path             = $_path
       InstallationPath = $_installation.Path
     }
   }
@@ -200,8 +200,8 @@ function Find-OutlookRepairTool {
   $_command = Get-Command -Name $_fileName -ErrorAction SilentlyContinue
   if ($_command -and (Test-Path -LiteralPath $_command.Source -PathType Leaf)) {
     [PSCustomObject]@{
-      Name = $Name
-      Path = $_command.Source
+      Name             = $Name
+      Path             = $_command.Source
       InstallationPath = Split-Path -Path $_command.Source -Parent
     }
   }
@@ -278,7 +278,7 @@ function Connect-Outlook {
   $_namespace.Logon($null, $null, $false, $false)
 
   [PSCustomObject]@{
-    App = $_application
+    App       = $_application
     Namespace = $_namespace
   }
 }

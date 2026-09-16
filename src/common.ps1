@@ -282,7 +282,7 @@ function Write-OperationResultLog {
   $_lines = foreach ($_result in $_results) {
     $_entry = [ordered]@{
       Timestamp = (Get-Date).ToString('o')
-      Script = $ScriptName
+      Script    = $ScriptName
     }
 
     foreach ($_property in $_result.PSObject.Properties) {

@@ -169,8 +169,8 @@ function Get-PackageCount {
 
   return [PSCustomObject]@{
     Programs = $_programs
-    Appx = $_appx
-    Total = ($_programs + $_appx)
+    Appx     = $_appx
+    Total    = ($_programs + $_appx)
   }
 }
 
@@ -211,19 +211,19 @@ function Get-Win32Program {
 
   $_uninstallRoots = @(
     @{
-      Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+      Path  = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
       Scope = 'Machine'
-      View = '64-bit'
+      View  = '64-bit'
     },
     @{
-      Path = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+      Path  = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
       Scope = 'Machine'
-      View = '32-bit'
+      View  = '32-bit'
     },
     @{
-      Path = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+      Path  = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
       Scope = 'CurrentUser'
-      View = 'Default'
+      View  = 'Default'
     }
   )
 
@@ -241,21 +241,21 @@ function Get-Win32Program {
       if ($_systemComponent -and -not $IncludeSystemComponent) { continue }
 
       [PSCustomObject]@{
-        Source = 'Win32Program'
-        Name = $_displayName
-        DisplayName = $_displayName
-        DisplayVersion = Get-RegistryValue -Path $_path -Name 'DisplayVersion' -ErrorAction SilentlyContinue
-        Publisher = Get-RegistryValue -Path $_path -Name 'Publisher' -ErrorAction SilentlyContinue
-        InstallLocation = Get-RegistryValue -Path $_path -Name 'InstallLocation' -ErrorAction SilentlyContinue
-        InstallDate = Get-RegistryValue -Path $_path -Name 'InstallDate' -ErrorAction SilentlyContinue
-        UninstallString = Get-RegistryValue -Path $_path -Name 'UninstallString' -ErrorAction SilentlyContinue
+        Source               = 'Win32Program'
+        Name                 = $_displayName
+        DisplayName          = $_displayName
+        DisplayVersion       = Get-RegistryValue -Path $_path -Name 'DisplayVersion' -ErrorAction SilentlyContinue
+        Publisher            = Get-RegistryValue -Path $_path -Name 'Publisher' -ErrorAction SilentlyContinue
+        InstallLocation      = Get-RegistryValue -Path $_path -Name 'InstallLocation' -ErrorAction SilentlyContinue
+        InstallDate          = Get-RegistryValue -Path $_path -Name 'InstallDate' -ErrorAction SilentlyContinue
+        UninstallString      = Get-RegistryValue -Path $_path -Name 'UninstallString' -ErrorAction SilentlyContinue
         QuietUninstallString = Get-RegistryValue -Path $_path -Name 'QuietUninstallString' -ErrorAction SilentlyContinue
-        ModifyPath = Get-RegistryValue -Path $_path -Name 'ModifyPath' -ErrorAction SilentlyContinue
-        EstimatedSize = Get-RegistryValue -Path $_path -Name 'EstimatedSize' -ErrorAction SilentlyContinue
-        RegistryPath = $_path
-        RegistryScope = $_root.Scope
-        RegistryView = $_root.View
-        SystemComponent = [bool]$_systemComponent
+        ModifyPath           = Get-RegistryValue -Path $_path -Name 'ModifyPath' -ErrorAction SilentlyContinue
+        EstimatedSize        = Get-RegistryValue -Path $_path -Name 'EstimatedSize' -ErrorAction SilentlyContinue
+        RegistryPath         = $_path
+        RegistryScope        = $_root.Scope
+        RegistryView         = $_root.View
+        SystemComponent      = [bool]$_systemComponent
       }
     }
   }
@@ -305,21 +305,21 @@ function Find-Win32Program {
     if ([string]::IsNullOrWhiteSpace($_displayName)) { return }
 
     return [PSCustomObject]@{
-      Source = 'Win32Program'
-      Name = $_displayName
-      DisplayName = $_displayName
-      DisplayVersion = Get-RegistryValue -Path $RegistryPath -Name 'DisplayVersion' -ErrorAction SilentlyContinue
-      Publisher = Get-RegistryValue -Path $RegistryPath -Name 'Publisher' -ErrorAction SilentlyContinue
-      InstallLocation = Get-RegistryValue -Path $RegistryPath -Name 'InstallLocation' -ErrorAction SilentlyContinue
-      InstallDate = Get-RegistryValue -Path $RegistryPath -Name 'InstallDate' -ErrorAction SilentlyContinue
-      UninstallString = Get-RegistryValue -Path $RegistryPath -Name 'UninstallString' -ErrorAction SilentlyContinue
+      Source               = 'Win32Program'
+      Name                 = $_displayName
+      DisplayName          = $_displayName
+      DisplayVersion       = Get-RegistryValue -Path $RegistryPath -Name 'DisplayVersion' -ErrorAction SilentlyContinue
+      Publisher            = Get-RegistryValue -Path $RegistryPath -Name 'Publisher' -ErrorAction SilentlyContinue
+      InstallLocation      = Get-RegistryValue -Path $RegistryPath -Name 'InstallLocation' -ErrorAction SilentlyContinue
+      InstallDate          = Get-RegistryValue -Path $RegistryPath -Name 'InstallDate' -ErrorAction SilentlyContinue
+      UninstallString      = Get-RegistryValue -Path $RegistryPath -Name 'UninstallString' -ErrorAction SilentlyContinue
       QuietUninstallString = Get-RegistryValue -Path $RegistryPath -Name 'QuietUninstallString' -ErrorAction SilentlyContinue
-      ModifyPath = Get-RegistryValue -Path $RegistryPath -Name 'ModifyPath' -ErrorAction SilentlyContinue
-      EstimatedSize = Get-RegistryValue -Path $RegistryPath -Name 'EstimatedSize' -ErrorAction SilentlyContinue
-      RegistryPath = $RegistryPath
-      RegistryScope = $null
-      RegistryView = $null
-      SystemComponent = [bool](Get-RegistryValue -Path $RegistryPath -Name 'SystemComponent' -ErrorAction SilentlyContinue)
+      ModifyPath           = Get-RegistryValue -Path $RegistryPath -Name 'ModifyPath' -ErrorAction SilentlyContinue
+      EstimatedSize        = Get-RegistryValue -Path $RegistryPath -Name 'EstimatedSize' -ErrorAction SilentlyContinue
+      RegistryPath         = $RegistryPath
+      RegistryScope        = $null
+      RegistryView         = $null
+      SystemComponent      = [bool](Get-RegistryValue -Path $RegistryPath -Name 'SystemComponent' -ErrorAction SilentlyContinue)
     }
   }
 
@@ -381,7 +381,7 @@ function Install-Win32Program {
 
   try {
     $_params = @{
-      FilePath = $_target
+      FilePath    = $_target
       ErrorAction = 'Stop'
     }
     if ($ArgumentList) { $_params.ArgumentList = $ArgumentList }
@@ -497,9 +497,9 @@ function Uninstall-Win32Program {
         }
 
         $_params = @{
-          FilePath = $_file
-          Wait = $true
-          PassThru = $true
+          FilePath    = $_file
+          Wait        = $true
+          PassThru    = $true
           ErrorAction = 'Stop'
         }
         if (-not [string]::IsNullOrWhiteSpace($_args)) { $_params.ArgumentList = $_args }
@@ -588,21 +588,21 @@ function Get-UPFAppxPackage {
       if (-not $IncludeBundle -and $_isBundle) { continue }
 
       [PSCustomObject]@{
-        Source = 'Installed'
-        Name = $_package.Name
-        DisplayName = $_package.Name
-        PackageFullName = $_package.PackageFullName
-        PackageName = $_package.PackageFullName
+        Source            = 'Installed'
+        Name              = $_package.Name
+        DisplayName       = $_package.Name
+        PackageFullName   = $_package.PackageFullName
+        PackageName       = $_package.PackageFullName
         PackageFamilyName = $_package.PackageFamilyName
-        Publisher = $_package.Publisher
-        Version = $_package.Version
-        Architecture = $_package.Architecture
-        IsFramework = $_isFramework
+        Publisher         = $_package.Publisher
+        Version           = $_package.Version
+        Architecture      = $_package.Architecture
+        IsFramework       = $_isFramework
         IsResourcePackage = $_isResourcePackage
-        IsBundle = $_isBundle
-        NonRemovable = $_nonRemovable
-        InstallLocation = $_package.InstallLocation
-        User = $_userSecurityId
+        IsBundle          = $_isBundle
+        NonRemovable      = $_nonRemovable
+        InstallLocation   = $_package.InstallLocation
+        User              = $_userSecurityId
       }
     }
   }
@@ -618,21 +618,21 @@ function Get-UPFAppxPackage {
 
     foreach ($_package in $_provisioned) {
       [PSCustomObject]@{
-        Source = 'Provisioned'
-        Name = $_package.DisplayName
-        DisplayName = $_package.DisplayName
-        PackageFullName = $null
-        PackageName = $_package.PackageName
+        Source            = 'Provisioned'
+        Name              = $_package.DisplayName
+        DisplayName       = $_package.DisplayName
+        PackageFullName   = $null
+        PackageName       = $_package.PackageName
         PackageFamilyName = $null
-        Publisher = $null
-        Version = $_package.Version
-        Architecture = $_package.Architecture
-        IsFramework = $false
+        Publisher         = $null
+        Version           = $_package.Version
+        Architecture      = $_package.Architecture
+        IsFramework       = $false
         IsResourcePackage = $false
-        IsBundle = $false
-        NonRemovable = $false
-        InstallLocation = $null
-        User = $null
+        IsBundle          = $false
+        NonRemovable      = $false
+        InstallLocation   = $null
+        User              = $null
       }
     }
   }
@@ -696,11 +696,11 @@ function Find-UPFAppxPackage {
       $_inventory = @(Get-UPFAppxPackage -Name $_pattern -Installed:$Installed -Provisioned:$Provisioned -AllUsers:$AllUsers -IncludeFramework:$IncludeFramework -IncludeResource:$IncludeResource -IncludeBundle:$IncludeBundle)
       if ($_inventory.Count -eq 0) {
         [PSCustomObject]@{
-          Pattern = $_pattern
-          Matched = $false
-          Protected = $false
+          Pattern         = $_pattern
+          Matched         = $false
+          Protected       = $false
           ProtectedReason = $null
-          Package = $null
+          Package         = $null
         }
         continue
       }
@@ -709,21 +709,21 @@ function Find-UPFAppxPackage {
         $_safety = Test-UPFAppxPackageRemovalSafety -InputObject $_package
         if ($_safety.Protected -and -not $IncludeProtected) {
           [PSCustomObject]@{
-            Pattern = $_pattern
-            Matched = $true
-            Protected = $true
+            Pattern         = $_pattern
+            Matched         = $true
+            Protected       = $true
             ProtectedReason = $_safety.Reason
-            Package = $_package
+            Package         = $_package
           }
           continue
         }
 
         [PSCustomObject]@{
-          Pattern = $_pattern
-          Matched = $true
-          Protected = $_safety.Protected
+          Pattern         = $_pattern
+          Matched         = $true
+          Protected       = $_safety.Protected
           ProtectedReason = $_safety.Reason
-          Package = $_package
+          Package         = $_package
         }
       }
     }
@@ -782,9 +782,9 @@ function Test-UPFAppxPackageRemovalSafety {
     }
 
     [PSCustomObject]@{
-      Target = $InputObject.PackageName
+      Target    = $InputObject.PackageName
       Protected = -not [string]::IsNullOrWhiteSpace($_reason)
-      Reason = $_reason
+      Reason    = $_reason
     }
   }
 }
@@ -850,7 +850,7 @@ function Install-UPFAppxPackage {
   try {
     if ($Provisioned) {
       $_params = @{
-        Online = $true
+        Online      = $true
         PackagePath = $_path
         ErrorAction = 'Stop'
       }
@@ -861,7 +861,7 @@ function Install-UPFAppxPackage {
     }
     else {
       $_params = @{
-        Path = $_path
+        Path        = $_path
         ErrorAction = 'Stop'
       }
       if ($DependencyPath) { $_params.DependencyPath = $DependencyPath }

@@ -44,12 +44,16 @@ jobs:
         run: .\PSFoundation.ps1 lint
 
   test:
-    name: Test
+    name: Test (${{ matrix.os }}, ${{ matrix.shell }})
     needs: [lint]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     strategy:
       matrix:
         os: [windows-latest, windows-2022]
+        shell: [powershell, pwsh]
     permissions:
       contents: read
       packages: read
@@ -60,31 +64,25 @@ jobs:
           persist-credentials: false
 
       - name: Dump pre-existing module state
-        shell: pwsh
         run: |
           . .\src\maintenance.ps1
           Get-PSModule -Path ./.github/ci-modules-before.json
 
       - name: Initialize dependencies
-        shell: pwsh
         run: .\PSFoundation.ps1 init
 
       - name: Dump post-init module state
-        shell: pwsh
         run: |
           . .\src\maintenance.ps1
           Get-PSModule -Path ./.github/ci-modules-after.json
 
       - name: Format check
-        shell: pwsh
         run: .\PSFoundation.ps1 format -Check
 
       - name: Lint
-        shell: pwsh
         run: .\PSFoundation.ps1 lint
 
       - name: Test
-        shell: pwsh
         run: .\PSFoundation.ps1 test
 
   dispatch:
@@ -100,7 +98,7 @@ jobs:
         # release only after every platform in the test matrix succeeded
         # ref: https://github.com/actions/runner/issues/1251
         if: ${{ github.event_name == 'push' && always() && !contains(join(needs.*.result, ','), 'failure') }}
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: "${{ env.GITHUB_TOKEN }}"
           script: |

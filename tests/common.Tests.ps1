@@ -104,9 +104,9 @@ Describe 'Export-RegistrySettingState' {
     Mock Get-RegistryValueKind { 'String' }
 
     $setting = @{
-      Path = 'HKLM:\Software\Test'
-      Name = 'TestValue'
-      Type = 'String'
+      Path    = 'HKLM:\Software\Test'
+      Name    = 'TestValue'
+      Type    = 'String'
       Default = 'default'
     }
 
@@ -140,10 +140,10 @@ Describe 'Export-RegistrySettingState' {
 Describe 'ConvertTo-RegistrySettingResult' {
   It 'builds Skipped/DryRun results in DryRun mode' {
     $setting = [PSCustomObject]@{
-      Path = 'HKLM:\Software\Test'
-      Name = 'Setting1'
-      Preferred = 'enabled'
-      Default = 'disabled'
+      Path        = 'HKLM:\Software\Test'
+      Name        = 'Setting1'
+      Preferred   = 'enabled'
+      Default     = 'disabled'
       Description = 'A test setting'
     }
 
@@ -156,10 +156,10 @@ Describe 'ConvertTo-RegistrySettingResult' {
 
   It 'builds undo results with RemoveValue action when Default is null' {
     $setting = [PSCustomObject]@{
-      Path = 'HKLM:\Software\Test'
-      Name = 'Setting2'
+      Path      = 'HKLM:\Software\Test'
+      Name      = 'Setting2'
       Preferred = 'enabled'
-      Default = $null
+      Default   = $null
     }
 
     $results = ConvertTo-RegistrySettingResult -Settings @($setting) -Undo -DryRun
@@ -168,10 +168,10 @@ Describe 'ConvertTo-RegistrySettingResult' {
 
   It 'builds SetValue action for normal apply with Preferred' {
     $setting = [PSCustomObject]@{
-      Path = 'HKLM:\Software\Test'
-      Name = 'Setting3'
+      Path      = 'HKLM:\Software\Test'
+      Name      = 'Setting3'
       Preferred = '42'
-      Default = 0
+      Default   = 0
     }
 
     $results = ConvertTo-RegistrySettingResult -Settings @($setting) -DryRun
@@ -187,10 +187,10 @@ Describe 'ConvertTo-RegistrySettingResult' {
     Mock Test-RegistryValue { $false }
 
     $setting = [PSCustomObject]@{
-      Path = 'HKLM:\Software\Test'
-      Name = 'Setting4'
+      Path      = 'HKLM:\Software\Test'
+      Name      = 'Setting4'
       Preferred = 'value'
-      Default = $null
+      Default   = $null
     }
 
     $results = ConvertTo-RegistrySettingResult -Settings @($setting) -Undo

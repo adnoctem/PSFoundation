@@ -131,7 +131,7 @@ function Split-ReleaseVersion {
 
   [pscustomobject]@{
     CoreVersion = $coreVersion
-    Prerelease = $prerelease
+    Prerelease  = $prerelease
   }
 }
 
@@ -329,9 +329,9 @@ if ($DryRun) {
 $publishPSResource = Get-Command -Name 'Publish-PSResource' -ErrorAction SilentlyContinue
 if ($publishPSResource) {
   $publishParams = @{
-    Path = $srcPath
-    Repository = $Gallery
-    ApiKey = $NuGetApiKey
+    Path        = $srcPath
+    Repository  = $Gallery
+    ApiKey      = $NuGetApiKey
     ErrorAction = 'Stop'
   }
 
@@ -361,10 +361,10 @@ else {
 
   try {
     $publishParams = @{
-      Path = $stagingModulePath
-      Repository = $Gallery
+      Path        = $stagingModulePath
+      Repository  = $Gallery
       NuGetApiKey = $NuGetApiKey
-      Force = $true
+      Force       = $true
       ErrorAction = 'Stop'
     }
 

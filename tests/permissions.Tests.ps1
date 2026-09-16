@@ -40,9 +40,9 @@ Describe 'Request-AdministratorPrivilege' {
       $output = & $hostExecutable -NoProfile -ExecutionPolicy Bypass -File $fixture -Source $source -Report $report -LaunchReport $launchReport -Kind $Kind -Target $targetScript 2>&1
       [PSCustomObject]@{
         ExitCode = $LASTEXITCODE
-        Output = $output | Out-String
-        Launch = if (Test-Path -LiteralPath $launchReport) { Import-Clixml -LiteralPath $launchReport } else { $null }
-        Result = if (Test-Path -LiteralPath $report) { Import-Clixml -LiteralPath $report } else { $null }
+        Output   = $output | Out-String
+        Launch   = if (Test-Path -LiteralPath $launchReport) { Import-Clixml -LiteralPath $launchReport } else { $null }
+        Result   = if (Test-Path -LiteralPath $report) { Import-Clixml -LiteralPath $report } else { $null }
       }
     }
   }

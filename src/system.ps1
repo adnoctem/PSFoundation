@@ -237,16 +237,16 @@ function Get-OSVersionInfo {
   $registeredOwner = if ($propLookup['RegisteredOwner']) { [string]$propLookup['RegisteredOwner'].Value } else { $null }
 
   [PSCustomObject]@{
-    ProductName = Resolve-WindowsProductName -ProductName $productName -CurrentBuild $currentBuild
-    EditionID = $editionId
+    ProductName      = Resolve-WindowsProductName -ProductName $productName -CurrentBuild $currentBuild
+    EditionID        = $editionId
     InstallationType = $installationType
-    DisplayVersion = $displayVersion
-    CurrentBuild = $currentBuild
-    UBR = if ($propLookup['UBR']) { [int]$propLookup['UBR'].Value } else { 0 }
-    ReleaseId = $releaseId
-    BuildBranch = $buildBranch
-    InstallDate = $installDate
-    RegisteredOwner = $registeredOwner
+    DisplayVersion   = $displayVersion
+    CurrentBuild     = $currentBuild
+    UBR              = if ($propLookup['UBR']) { [int]$propLookup['UBR'].Value } else { 0 }
+    ReleaseId        = $releaseId
+    BuildBranch      = $buildBranch
+    InstallDate      = $installDate
+    RegisteredOwner  = $registeredOwner
   }
 }
 
@@ -286,13 +286,13 @@ function Get-SystemMemory {
   $usedGiB = [math]::Round(($memInfo.ullTotalPhys - $memInfo.ullAvailPhys) / 1GB, 2)
 
   [PSCustomObject]@{
-    TotalBytes = $memInfo.ullTotalPhys
+    TotalBytes     = $memInfo.ullTotalPhys
     AvailableBytes = $memInfo.ullAvailPhys
-    UsedBytes = $memInfo.ullTotalPhys - $memInfo.ullAvailPhys
-    LoadPercent = $memInfo.dwMemoryLoad
-    TotalGiB = Format-SysInfoInvariant '{0:0.##}' $totalGiB
-    AvailableGiB = Format-SysInfoInvariant '{0:0.##}' $availableGiB
-    UsedGiB = Format-SysInfoInvariant '{0:0.##}' $usedGiB
+    UsedBytes      = $memInfo.ullTotalPhys - $memInfo.ullAvailPhys
+    LoadPercent    = $memInfo.dwMemoryLoad
+    TotalGiB       = Format-SysInfoInvariant '{0:0.##}' $totalGiB
+    AvailableGiB   = Format-SysInfoInvariant '{0:0.##}' $availableGiB
+    UsedGiB        = Format-SysInfoInvariant '{0:0.##}' $usedGiB
   }
 }
 
@@ -367,9 +367,9 @@ function Get-SystemDisk {
     $percentFree = [math]::Round($freeBytes * 100.0 / $totalBytes, 1)
 
     [PSCustomObject]@{
-      Name = $disk.DeviceID
-      Label = $disk.VolumeName
-      Type = switch ([int]$disk.DriveType) {
+      Name        = $disk.DeviceID
+      Label       = $disk.VolumeName
+      Type        = switch ([int]$disk.DriveType) {
         2 { 'Removable' }
         3 { 'Fixed' }
         4 { 'Network' }
@@ -377,13 +377,13 @@ function Get-SystemDisk {
         6 { 'Ram' }
         default { 'Unknown' }
       }
-      FileSystem = $disk.FileSystem
-      TotalGiB = Format-SysInfoInvariant '{0:0.##}' $totalGiB
-      FreeGiB = Format-SysInfoInvariant '{0:0.##}' $freeGiB
-      UsedGiB = Format-SysInfoInvariant '{0:0.##}' $usedGiB
+      FileSystem  = $disk.FileSystem
+      TotalGiB    = Format-SysInfoInvariant '{0:0.##}' $totalGiB
+      FreeGiB     = Format-SysInfoInvariant '{0:0.##}' $freeGiB
+      UsedGiB     = Format-SysInfoInvariant '{0:0.##}' $usedGiB
       PercentFree = Format-SysInfoInvariant '{0:0.#}' $percentFree
-      TotalBytes = $totalBytes
-      FreeBytes = $freeBytes
+      TotalBytes  = $totalBytes
+      FreeBytes   = $freeBytes
     }
   }
 }
@@ -423,7 +423,7 @@ function Get-Hostname {
 
   [PSCustomObject]@{
     Hostname = $hostname
-    FQDN = $fqdn
+    FQDN     = $fqdn
   }
 }
 
@@ -455,13 +455,13 @@ function Get-SystemUptime {
 
   [PSCustomObject]@{
     TotalMilliseconds = $ticksMs
-    Days = $span.Days
-    Hours = $span.Hours
-    Minutes = $span.Minutes
-    Seconds = $span.Seconds
-    TotalHours = Format-SysInfoInvariant '{0:0.#}' ([math]::Round($span.TotalHours, 1))
-    TotalDays = Format-SysInfoInvariant '{0:0.#}' ([math]::Round($span.TotalDays, 1))
-    Display = Format-SysInfoInvariant '{0}d {1:D2}h {2:D2}m {3:D2}s' $span.Days $span.Hours $span.Minutes $span.Seconds
+    Days              = $span.Days
+    Hours             = $span.Hours
+    Minutes           = $span.Minutes
+    Seconds           = $span.Seconds
+    TotalHours        = Format-SysInfoInvariant '{0:0.#}' ([math]::Round($span.TotalHours, 1))
+    TotalDays         = Format-SysInfoInvariant '{0:0.#}' ([math]::Round($span.TotalDays, 1))
+    Display           = Format-SysInfoInvariant '{0}d {1:D2}h {2:D2}m {3:D2}s' $span.Days $span.Hours $span.Minutes $span.Seconds
   }
 }
 
@@ -496,18 +496,18 @@ function Get-SystemInfo {
   $_up = Get-SystemUptime
 
   [PSCustomObject]@{
-    OSProductName = $_os.ProductName
-    OSEdition = $_os.EditionID
-    OSVersion = $_os.DisplayVersion
-    OSBuild = $_os.CurrentBuild
-    OSUBRev = $_os.UBR
-    Hostname = $_host.Hostname
-    FQDN = $_host.FQDN
+    OSProductName  = $_os.ProductName
+    OSEdition      = $_os.EditionID
+    OSVersion      = $_os.DisplayVersion
+    OSBuild        = $_os.CurrentBuild
+    OSUBRev        = $_os.UBR
+    Hostname       = $_host.Hostname
+    FQDN           = $_host.FQDN
     TotalMemoryGiB = $_mem.TotalGiB
-    MemoryLoadPct = $_mem.LoadPercent
-    Disks = ($_disks | ForEach-Object { Format-SysInfoInvariant '{0} {1}GiB/{2}GiB ({3}% free)' $_.Name $_.FreeGiB $_.TotalGiB $_.PercentFree }) -join ' | '
-    Uptime = $_up.Display
-    InstallDate = $_os.InstallDate
+    MemoryLoadPct  = $_mem.LoadPercent
+    Disks          = ($_disks | ForEach-Object { Format-SysInfoInvariant '{0} {1}GiB/{2}GiB ({3}% free)' $_.Name $_.FreeGiB $_.TotalGiB $_.PercentFree }) -join ' | '
+    Uptime         = $_up.Display
+    InstallDate    = $_os.InstallDate
   }
 }
 
@@ -543,11 +543,11 @@ function Get-SystemPaths {
   )
 
   return [PSCustomObject]@{
-    Home = Join-Path -Path $env:USERPROFILE -ChildPath $Name
+    Home   = Join-Path -Path $env:USERPROFILE -ChildPath $Name
     Config = Join-Path -Path $env:APPDATA -ChildPath $Name
-    Cache = Join-Path -Path $env:LOCALAPPDATA -ChildPath $Name
-    Data = Join-Path -Path $env:ProgramData -ChildPath $Name
-    Logs = Join-Path -Path $env:LOCALAPPDATA -ChildPath "$Name\logs"
+    Cache  = Join-Path -Path $env:LOCALAPPDATA -ChildPath $Name
+    Data   = Join-Path -Path $env:ProgramData -ChildPath $Name
+    Logs   = Join-Path -Path $env:LOCALAPPDATA -ChildPath "$Name\logs"
   }
 }
 
@@ -775,19 +775,19 @@ function Get-DotNetVersion {
       $servicePack = if ($props['SP']) { [int]$props['SP'].Value } else { 0 }
 
       $releases += [PSCustomObject]@{
-        Name = $_.PSChildName
-        Version = $version
-        Release = $release
+        Name      = $_.PSChildName
+        Version   = $version
+        Release   = $release
         Installed = $install
-        Product = Resolve-NetFrameworkProductName -Release $release -ServicePack $servicePack -ChildName $_.PSChildName
+        Product   = Resolve-NetFrameworkProductName -Release $release -ServicePack $servicePack -ChildName $_.PSChildName
       }
     }
 
   [PSCustomObject]@{
-    DotnetRuntimes = $runtimes
-    DotnetSDKs = $sdks
+    DotnetRuntimes   = $runtimes
+    DotnetSDKs       = $sdks
     FrameworkVersion = [Environment]::Version.ToString()
-    Releases = $releases
+    Releases         = $releases
   }
 }
 
@@ -1211,7 +1211,7 @@ function Test-PendingReboot {
 
   [PSCustomObject]@{
     PendingReboot = $indicators.Count -gt 0
-    Indicators = $indicators.ToArray()
+    Indicators    = $indicators.ToArray()
   }
 }
 
@@ -1307,9 +1307,9 @@ function Test-SystemFileIntegrity {
   $verdict = Resolve-SystemFileIntegrityVerdict -SfcOutput $sfcOutput -ExitCode $sfcExitCode -LogExcerpt $logExcerpt
 
   [PSCustomObject]@{
-    Status = $verdict.Status
-    Detail = $verdict.Detail
-    ExitCode = $sfcExitCode
+    Status     = $verdict.Status
+    Detail     = $verdict.Detail
+    ExitCode   = $sfcExitCode
     LogExcerpt = $logExcerpt
   }
 }
@@ -1426,10 +1426,10 @@ function Find-ServiceAccountUsage {
           if ($service.StartName -like "*$account*") {
             $services += [PSCustomObject]@{
               ComputerName = $computer
-              DisplayName = $service.DisplayName
-              StartName = $service.StartName
-              State = $service.State
-              ProcessId = $service.ProcessId
+              DisplayName  = $service.DisplayName
+              StartName    = $service.StartName
+              State        = $service.State
+              ProcessId    = $service.ProcessId
             }
           }
         }
@@ -1442,9 +1442,9 @@ function Find-ServiceAccountUsage {
             if ($task.'Run As User' -like "*$account*") {
               $tasks += [PSCustomObject]@{
                 ComputerName = $computer
-                TaskName = $task.TaskName
-                Status = $task.Status
-                RunAsUser = $task.'Run As User'
+                TaskName     = $task.TaskName
+                Status       = $task.Status
+                RunAsUser    = $task.'Run As User'
               }
             }
           }
@@ -1455,7 +1455,7 @@ function Find-ServiceAccountUsage {
       }
 
       [PSCustomObject]@{
-        Name = $account
+        Name     = $account
         Services = $services
         SchTasks = $tasks
       }
@@ -1652,10 +1652,10 @@ function Get-FileLockProcess {
           }
 
           $lockers += [PSCustomObject]@{
-            ProcessId = $info.ProcessId
-            ProcessName = $processName
-            AppName = $info.AppName
-            SessionId = $info.TSSessionId
+            ProcessId       = $info.ProcessId
+            ProcessName     = $processName
+            AppName         = $info.AppName
+            SessionId       = $info.TSSessionId
             ApplicationType = switch ([int]$info.ApplicationType) {
               0 { 'RmUnknownApp' }
               1 { 'RmMainWindow' }
@@ -1666,7 +1666,7 @@ function Get-FileLockProcess {
               1000 { 'RmCritical' }
               default { "Unknown($($info.ApplicationType))" }
             }
-            Restartable = $info.Restartable
+            Restartable     = $info.Restartable
           }
         }
 
@@ -1709,18 +1709,18 @@ function ConvertTo-FontFallbackName {
   $name = $FileName -replace '\.(ttf|ttc|otf)$', ''
   $name = $name -replace '[-_\[\]\.]', ' '
   $tokenMap = @{
-    'Mono' = ' Mono'
-    'NF' = ' NF'
-    'NL' = ' NL'
-    'VF' = ' VF'
-    'wght' = ' Variable'
-    'Thin' = ' Thin'
-    'Semi' = ' Semi'
-    'Medium' = ' Medium'
-    'Extra' = ' Extra'
-    'Bold' = ' Bold'
-    'Italic' = ' Italic'
-    'Light' = ' Light'
+    'Mono'    = ' Mono'
+    'NF'      = ' NF'
+    'NL'      = ' NL'
+    'VF'      = ' VF'
+    'wght'    = ' Variable'
+    'Thin'    = ' Thin'
+    'Semi'    = ' Semi'
+    'Medium'  = ' Medium'
+    'Extra'   = ' Extra'
+    'Bold'    = ' Bold'
+    'Italic'  = ' Italic'
+    'Light'   = ' Light'
     'Regular' = ' Regular'
   }
   foreach ($token in $tokenMap.Keys) {

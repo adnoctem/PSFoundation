@@ -23,12 +23,12 @@ function Start-Process {
   [CmdletBinding()]
   param ($FilePath, $ArgumentList, $WorkingDirectory, $Verb, [switch]$PassThru, [switch]$Wait)
   [PSCustomObject]@{
-    HostPath = $FilePath
+    HostPath  = $FilePath
     Arguments = $ArgumentList
     Directory = $WorkingDirectory
-    Verb = $Verb
-    PassThru = [bool]$PassThru
-    Wait = [bool]$Wait
+    Verb      = $Verb
+    PassThru  = [bool]$PassThru
+    Wait      = [bool]$Wait
   } | Export-Clixml -LiteralPath $script:FixtureLaunchReport
   if ($Kind -eq 'Cancelled') { throw [ComponentModel.Win32Exception]::new(1223) }
   if ($Kind -eq 'LaunchFailure') { throw [ComponentModel.Win32Exception]::new(2) }

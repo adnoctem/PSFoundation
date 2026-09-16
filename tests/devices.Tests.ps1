@@ -12,34 +12,34 @@ Describe 'Get-PrintDevice' {
     Mock Get-Printer {
       @(
         [PSCustomObject]@{
-          Name = 'Office'
+          Name       = 'Office'
           DriverName = 'Office Driver'
-          PortName = 'IP_10.0.0.5'
-          Type = 'Local'
-          Shared = $true
-          Published = $false
+          PortName   = 'IP_10.0.0.5'
+          Type       = 'Local'
+          Shared     = $true
+          Published  = $false
         }
         [PSCustomObject]@{
-          Name = 'PDF'
+          Name       = 'PDF'
           DriverName = 'PDF Driver'
-          PortName = 'PORTPROMPT:'
-          Type = 'Local'
-          Shared = $false
-          Published = $false
+          PortName   = 'PORTPROMPT:'
+          Type       = 'Local'
+          Shared     = $false
+          Published  = $false
         }
       )
     }
     Mock Get-CimInstance {
       @(
         [PSCustomObject]@{
-          Name = 'Office'
+          Name     = 'Office'
           DeviceID = 'Office'
-          Default = $true
+          Default  = $true
         }
         [PSCustomObject]@{
-          Name = 'PDF'
+          Name     = 'PDF'
           DeviceID = 'PDF'
-          Default = $false
+          Default  = $false
         }
       )
     } -ParameterFilter { $ClassName -eq 'Win32_Printer' }
@@ -58,13 +58,13 @@ Describe 'Get-PrintDevice' {
     Mock Get-Command { $null } -ParameterFilter { $Name -eq 'Get-Printer' }
     Mock Get-CimInstance {
       @([PSCustomObject]@{
-          Name = 'Fallback'
-          DeviceID = 'Fallback'
+          Name       = 'Fallback'
+          DeviceID   = 'Fallback'
           DriverName = 'Fallback Driver'
-          PortName = 'LPT1:'
-          Network = $false
-          Shared = $false
-          Default = $true
+          PortName   = 'LPT1:'
+          Network    = $false
+          Shared     = $false
+          Default    = $true
         })
     } -ParameterFilter { $ClassName -eq 'Win32_Printer' }
 
@@ -82,15 +82,15 @@ Describe 'Get-DefaultPrintDevice' {
     Mock Get-CimInstance {
       @(
         [PSCustomObject]@{
-          Name = 'Office'
-          DeviceID = 'Office'
-          Default = $true
+          Name       = 'Office'
+          DeviceID   = 'Office'
+          Default    = $true
           DriverName = 'Office Driver'
         }
         [PSCustomObject]@{
-          Name = 'PDF'
-          DeviceID = 'PDF'
-          Default = $false
+          Name       = 'PDF'
+          DeviceID   = 'PDF'
+          Default    = $false
           DriverName = 'PDF Driver'
         }
       )
@@ -112,9 +112,9 @@ Describe 'Set-DefaultPrintDevice' {
     # testing where a real CIM environment is available.
     Mock Get-CimInstance {
       @([PSCustomObject]@{
-          Name = 'Office'
+          Name     = 'Office'
           DeviceID = 'Office'
-          Default = $false
+          Default  = $false
         })
     } -ParameterFilter { $ClassName -eq 'Win32_Printer' }
     Mock Invoke-CimMethod { [PSCustomObject]@{ ReturnValue = 0 } }
@@ -130,9 +130,9 @@ Describe 'Set-DefaultPrintDevice' {
   It 'honors WhatIf' {
     Mock Get-CimInstance {
       @([PSCustomObject]@{
-          Name = 'Office'
+          Name     = 'Office'
           DeviceID = 'Office'
-          Default = $false
+          Default  = $false
         })
     } -ParameterFilter { $ClassName -eq 'Win32_Printer' }
     Mock Invoke-CimMethod { [PSCustomObject]@{ ReturnValue = 0 } }
@@ -147,9 +147,9 @@ Describe 'Set-DefaultPrintDevice' {
   It 'skips when the requested printer is already default' {
     Mock Get-CimInstance {
       @([PSCustomObject]@{
-          Name = 'Office'
+          Name     = 'Office'
           DeviceID = 'Office'
-          Default = $true
+          Default  = $true
         })
     } -ParameterFilter { $ClassName -eq 'Win32_Printer' }
     Mock Invoke-CimMethod { [PSCustomObject]@{ ReturnValue = 0 } }
@@ -171,14 +171,14 @@ Describe 'Set-DefaultPrintDevice' {
     Mock Get-CimInstance {
       @(
         [PSCustomObject]@{
-          Name = 'Office'
+          Name     = 'Office'
           DeviceID = 'Office1'
-          Default = $false
+          Default  = $false
         }
         [PSCustomObject]@{
-          Name = 'Office'
+          Name     = 'Office'
           DeviceID = 'Office2'
-          Default = $false
+          Default  = $false
         }
       )
     } -ParameterFilter { $ClassName -eq 'Win32_Printer' }
@@ -192,39 +192,39 @@ Describe 'Get-ScanDevice' {
     $deviceInfo = [PSCustomObject]@{
       Properties = @(
         [PSCustomObject]@{
-          Name = 'Name'
+          Name  = 'Name'
           Value = 'Brother MFC'
         }
         [PSCustomObject]@{
-          Name = 'Unique Device ID'
+          Name  = 'Unique Device ID'
           Value = 'wia-device-1'
         }
         [PSCustomObject]@{
-          Name = 'Manufacturer'
+          Name  = 'Manufacturer'
           Value = 'Brother'
         }
         [PSCustomObject]@{
-          Name = 'Type'
+          Name  = 'Type'
           Value = 65537
         }
         [PSCustomObject]@{
-          Name = 'Port'
+          Name  = 'Port'
           Value = 'AUTO'
         }
         [PSCustomObject]@{
-          Name = 'Server'
+          Name  = 'Server'
           Value = 'local'
         }
         [PSCustomObject]@{
-          Name = 'Driver Version'
+          Name  = 'Driver Version'
           Value = '1.2.3'
         }
         [PSCustomObject]@{
-          Name = 'WIA Version'
+          Name  = 'WIA Version'
           Value = '2.0'
         }
         [PSCustomObject]@{
-          Name = 'PnP ID String'
+          Name  = 'PnP ID String'
           Value = 'root#image#0000'
         }
       )

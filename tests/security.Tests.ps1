@@ -231,12 +231,12 @@ Describe 'ConvertFrom-WinEvent' {
 '@
 
     $mockEvent = [PSCustomObject]@{
-      TimeCreated = [datetime]'2026-07-10T10:00:00'
-      Id = 4624
-      ProviderName = 'Microsoft-Windows-Security-Auditing'
-      LogName = 'Security'
-      MachineName = 'TEST-HOST'
-      RecordId = 12345
+      TimeCreated      = [datetime]'2026-07-10T10:00:00'
+      Id               = 4624
+      ProviderName     = 'Microsoft-Windows-Security-Auditing'
+      LogName          = 'Security'
+      MachineName      = 'TEST-HOST'
+      RecordId         = 12345
       LevelDisplayName = 'Information'
     }
     $mockEvent | Add-Member -MemberType ScriptMethod -Name 'ToXml' -Value { $xml.OuterXml } -Force
@@ -269,12 +269,12 @@ Describe 'ConvertFrom-WinEvent' {
 '@
 
     $mockEvent = [PSCustomObject]@{
-      TimeCreated = [datetime]'2026-07-10T10:00:00'
-      Id = 7036
-      ProviderName = 'Service Control Manager'
-      LogName = 'System'
-      MachineName = 'TEST-HOST'
-      RecordId = 1
+      TimeCreated      = [datetime]'2026-07-10T10:00:00'
+      Id               = 7036
+      ProviderName     = 'Service Control Manager'
+      LogName          = 'System'
+      MachineName      = 'TEST-HOST'
+      RecordId         = 1
       LevelDisplayName = 'Information'
     }
     $mockEvent | Add-Member -MemberType ScriptMethod -Name 'ToXml' -Value { $xml.OuterXml } -Force
@@ -321,12 +321,12 @@ Describe 'Get-WindowsLogonEvent - system account suppression' {
 </Event>
 '@
     $mockEvent = [PSCustomObject]@{
-      TimeCreated = [datetime]'2026-07-10T10:00:00'
-      Id = 4624
-      ProviderName = 'Microsoft-Windows-Security-Auditing'
-      LogName = 'Security'
-      MachineName = 'TEST-HOST'
-      RecordId = 1
+      TimeCreated      = [datetime]'2026-07-10T10:00:00'
+      Id               = 4624
+      ProviderName     = 'Microsoft-Windows-Security-Auditing'
+      LogName          = 'Security'
+      MachineName      = 'TEST-HOST'
+      RecordId         = 1
       LevelDisplayName = 'Information'
     }
     $mockEvent | Add-Member -MemberType ScriptMethod -Name 'ToXml' -Value { $xml.OuterXml } -Force
@@ -345,12 +345,12 @@ Describe 'Get-WindowsLogonEvent - system account suppression' {
 </Event>
 '@
     $mockEvent = [PSCustomObject]@{
-      TimeCreated = [datetime]'2026-07-10T10:00:00'
-      Id = 4624
-      ProviderName = 'Microsoft-Windows-Security-Auditing'
-      LogName = 'Security'
-      MachineName = 'TEST-HOST'
-      RecordId = 1
+      TimeCreated      = [datetime]'2026-07-10T10:00:00'
+      Id               = 4624
+      ProviderName     = 'Microsoft-Windows-Security-Auditing'
+      LogName          = 'Security'
+      MachineName      = 'TEST-HOST'
+      RecordId         = 1
       LevelDisplayName = 'Information'
     }
     $mockEvent | Add-Member -MemberType ScriptMethod -Name 'ToXml' -Value { $xml.OuterXml } -Force

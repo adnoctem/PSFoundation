@@ -64,16 +64,16 @@ function ConvertTo-PrintDevice {
   }
 
   [PSCustomObject]@{
-    Name = $_name
-    DeviceId = $_deviceId
+    Name       = $_name
+    DeviceId   = $_deviceId
     DriverName = Get-ObjectPropertyValue -InputObject $Printer -Name 'DriverName'
-    PortName = Get-ObjectPropertyValue -InputObject $Printer -Name 'PortName'
-    Type = Get-ObjectPropertyValue -InputObject $Printer -Name 'Type'
-    Shared = [bool](Get-ObjectPropertyValue -InputObject $Printer -Name 'Shared' -DefaultValue $false)
-    Published = [bool](Get-ObjectPropertyValue -InputObject $Printer -Name 'Published' -DefaultValue $false)
-    Network = [bool](Get-ObjectPropertyValue -InputObject $Printer -Name 'Network' -DefaultValue $false)
-    Default = [bool]$Default
-    Source = $Source
+    PortName   = Get-ObjectPropertyValue -InputObject $Printer -Name 'PortName'
+    Type       = Get-ObjectPropertyValue -InputObject $Printer -Name 'Type'
+    Shared     = [bool](Get-ObjectPropertyValue -InputObject $Printer -Name 'Shared' -DefaultValue $false)
+    Published  = [bool](Get-ObjectPropertyValue -InputObject $Printer -Name 'Published' -DefaultValue $false)
+    Network    = [bool](Get-ObjectPropertyValue -InputObject $Printer -Name 'Network' -DefaultValue $false)
+    Default    = [bool]$Default
+    Source     = $Source
   }
 }
 
@@ -279,16 +279,16 @@ function ConvertTo-ScanDevice {
   )
 
   [PSCustomObject]@{
-    Name = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Name'
-    DeviceId = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Unique Device ID'
-    Manufacturer = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Manufacturer'
-    Type = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Type'
-    Port = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Port'
-    Server = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Server'
+    Name          = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Name'
+    DeviceId      = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Unique Device ID'
+    Manufacturer  = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Manufacturer'
+    Type          = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Type'
+    Port          = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Port'
+    Server        = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Server'
     DriverVersion = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'Driver Version'
-    WiaVersion = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'WIA Version'
-    PnpId = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'PnP ID String'
-    Source = 'WIA'
+    WiaVersion    = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'WIA Version'
+    PnpId         = Get-WiaPropertyValue -DeviceInfo $DeviceInfo -Name 'PnP ID String'
+    Source        = 'WIA'
   }
 }
 

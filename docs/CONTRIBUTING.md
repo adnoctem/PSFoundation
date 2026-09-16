@@ -55,7 +55,31 @@ Output defaults to:
 - **Encoding**: UTF-8 with BOM (required for reliable parsing under Windows PowerShell 5.1)
 - **Line endings**: CRLF
 - **Indentation**: 2 spaces
+- **Hashtable assignments**: align the `=` signs in multiline hashtables
 - **Excluded directories**: `.git`, `.idea`, `dist`, `build`, `secrets` (unless `-IncludeSecrets` is supplied)
+
+VS Code's PowerShell extension uses `powershell.scriptAnalysis.settingsPath` for diagnostics and separate `powershell.codeFormatting.*`
+settings for editor formatting. To match the repository, add these settings to your local `.vscode/settings.json` (ignored by Git):
+
+```json
+{
+  "powershell.scriptAnalysis.enable": true,
+  "powershell.scriptAnalysis.settingsPath": "PSScriptAnalyzerSettings.psd1",
+  "powershell.codeFormatting.preset": "Custom",
+  "powershell.codeFormatting.alignPropertyValuePairs": true,
+  "powershell.codeFormatting.pipelineIndentationStyle": "IncreaseIndentationForFirstPipeline",
+  "powershell.codeFormatting.useCorrectCasing": true,
+  "[powershell]": {
+    "editor.defaultFormatter": "ms-vscode.powershell",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false
+  }
+}
+```
+
+Keep the editor settings, `PSScriptAnalyzerSettings.psd1`, and Super-Linter's `.github/linters/.powershell-psscriptanalyzer.psd1`
+synchronized when changing formatting conventions.
 
 To limit the scope, pass explicit paths:
 

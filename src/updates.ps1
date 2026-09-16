@@ -242,10 +242,10 @@ function Install-WindowsUpdate {
 
       foreach ($_item in $installResult) {
         $obj = [PSCustomObject]@{
-          KB = $_item.KB
-          Title = $_item.Title
-          HResult = $_item.HResult
-          Result = $_item.Result
+          KB             = $_item.KB
+          Title          = $_item.Title
+          HResult        = $_item.HResult
+          Result         = $_item.Result
           RebootRequired = $_item.RebootRequired
         }
         [void]$_results.Add($obj)
@@ -585,13 +585,13 @@ function Get-MSStoreUpdate {
 
     $results = foreach ($item in $appUpdates) {
       $obj = [PSCustomObject]@{
-        PackageFamilyName = $item.PackageFamilyName
-        ProductId = $item.ProductId
-        ItemKind = $item.ItemKind
-        ErrorCode = $item.ErrorCode
-        InstallType = $item.InstallType
+        PackageFamilyName     = $item.PackageFamilyName
+        ProductId             = $item.ProductId
+        ItemKind              = $item.ItemKind
+        ErrorCode             = $item.ErrorCode
+        InstallType           = $item.InstallType
         CompletedInstallCount = $item.CompletedInstallCount
-        TotalInstallCount = $item.TotalInstallCount
+        TotalInstallCount     = $item.TotalInstallCount
       }
       if ($PackageFamilyName) {
         if ($obj.PackageFamilyName -like $PackageFamilyName) { $obj }
@@ -714,7 +714,7 @@ function Install-MSStoreUpdate {
           Write-Log -Message "    No update available or already up to date." -Color Gray
           $_item = [PSCustomObject]@{
             PackageFamilyName = $_pfn
-            Status = 'NoUpdate'
+            Status            = 'NoUpdate'
           }
           [void]$_results.Add($_item)
           continue
@@ -729,8 +729,8 @@ function Install-MSStoreUpdate {
             Write-Log -Message "    Install completed ($_pfn)" -Color Green
             $_item = [PSCustomObject]@{
               PackageFamilyName = $_pfn
-              Status = 'Completed'
-              ErrorCode = $currentStatus.ErrorCode
+              Status            = 'Completed'
+              ErrorCode         = $currentStatus.ErrorCode
             }
             [void]$_results.Add($_item)
             break
@@ -740,8 +740,8 @@ function Install-MSStoreUpdate {
             Write-Log -Message "    Failed: $_pfn (ErrorCode $($currentStatus.ErrorCode))" -Color Red
             $_item = [PSCustomObject]@{
               PackageFamilyName = $_pfn
-              Status = 'Failed'
-              ErrorCode = $currentStatus.ErrorCode
+              Status            = 'Failed'
+              ErrorCode         = $currentStatus.ErrorCode
             }
             [void]$_results.Add($_item)
             break
@@ -758,7 +758,7 @@ function Install-MSStoreUpdate {
         Write-Log -Message "    Skipped: $_pfn (not installed or not applicable: $inner)" -Color Gray
         $_item = [PSCustomObject]@{
           PackageFamilyName = $_pfn
-          Status = 'Skipped'
+          Status            = 'Skipped'
         }
         [void]$_results.Add($_item)
       }
@@ -766,7 +766,7 @@ function Install-MSStoreUpdate {
         Write-Log -Message "    Unexpected error for ${_pfn}: $_" -Color Red
         $_item = [PSCustomObject]@{
           PackageFamilyName = $_pfn
-          Status = 'Failed'
+          Status            = 'Failed'
         }
         [void]$_results.Add($_item)
       }

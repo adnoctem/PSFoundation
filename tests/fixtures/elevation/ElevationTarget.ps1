@@ -11,9 +11,9 @@ param (
 )
 
 [PSCustomObject]@{
-  Bound = $PSBoundParameters
-  Directory = (Get-Location).Path
+  Bound      = $PSBoundParameters
+  Directory  = (Get-Location).Path
   ScriptPath = $PSCommandPath
-  Extra = @($args)
+  Extra      = @($args)
 } | Export-Clixml -LiteralPath $Report
 exit 37

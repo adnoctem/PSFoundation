@@ -9,18 +9,18 @@ BeforeAll {
 Describe 'Dependency version updates' {
   BeforeEach {
     $script:RuntimeUpdate = [pscustomobject]@{
-      Name = 'Example'
-      Source = 'runtime'
-      VersionField = 'ModuleVersion'
+      Name            = 'Example'
+      Source          = 'runtime'
+      VersionField    = 'ModuleVersion'
       DeclaredVersion = '1.2.0'
-      LatestVersion = '1.25.0'
+      LatestVersion   = '1.25.0'
     }
     $script:DevUpdate = [pscustomobject]@{
-      Name = 'Example'
-      Source = 'dev'
-      VersionField = 'MinimumVersion'
+      Name            = 'Example'
+      Source          = 'dev'
+      VersionField    = 'MinimumVersion'
       DeclaredVersion = '1.2.0'
-      LatestVersion = '1.25.0'
+      LatestVersion   = '1.25.0'
     }
     $script:ManifestContent = "@{ RequiredModules = @(@{ ModuleName = 'Example'; ModuleVersion = '1.2.0' }) }"
     $script:DevContent = '[{"Name":"Example","MinimumVersion":"1.2.0"}]'

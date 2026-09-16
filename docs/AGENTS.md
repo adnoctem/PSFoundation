@@ -22,8 +22,13 @@ Windows PowerShell 5.1 and PowerShell 7+. `src/` is the module source, `tools/` 
 
 Verification order: `.\PSFoundation.ps1 format -Check` then `lint` then `test`.
 
+Before preparing a commit message or handing changes back, run `pre-commit run --all-files`. Resolve findings and rerun after any hook
+modifies files so the final check passes on the proposed changes.
+
 ## Adding a public function
 
+- Extend an existing domain file and its matching test file when they are a suitable home for new functions. Create a new source file only
+  when no existing domain fits. Keep repository filenames free of spaces; use temporary test paths when testing whitespace handling.
 - Every `*.ps1` in `src/` is dot-sourced automatically by `src/PSFoundation.psm1` (except `common.ps1`, sourced first) — no manual wiring.
 - Register the function in **both** `$publicFunctions` in `src/PSFoundation.psm1` **and** `FunctionsToExport` in `src/PSFoundation.psd1`
   (aliases likewise: `$publicAliases` / `AliasesToExport`). Missing either means the function is not exported.
@@ -42,6 +47,15 @@ Verification order: `.\PSFoundation.ps1 format -Check` then `lint` then `test`.
   `tools/release.ps1 -Prepare`.
 - pre-commit hooks (`.pre-commit-config.yaml`) run format/lint and prettier on Markdown (prettier runs via `bun`); install once with
   `pre-commit install`.
+
+## Security review rules (non-negotiable)
+
+- Never commit secrets, credentials, tokens, or private machine configuration. Keep test fixtures synthetic or sanitized. Do not log secrets
+  or pass them in process arguments; encoding is not encryption.
+- Verify downloaded executable content against an independently trusted hash or signature before execution. Do not disable certificate
+  validation or bypass integrity failures to make a download succeed.
+- Do not use `Invoke-Expression` on string-built commands. Keep executable code separate from data; when crossing process boundaries,
+  constrain supported value types and quote all user-controlled values.
 
 ## Layout
 

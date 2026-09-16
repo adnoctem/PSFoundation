@@ -76,7 +76,7 @@ function Get-ErrorTranslation {
   begin {
     # Small, intentionally curated tables. Source references are in public help.
     $tables = [ordered]@{
-      Appx = @{
+      Appx   = @{
         '80073CF0' = @($false, 'The package could not be opened. Check its path, access, signature, and the AppxPackagingOM log.')
         '80073CF3' = @($false, 'Dependency or conflict validation failed. Check dependencies, architecture, and AppXDeployment-Server logs.')
         '80073CF9' = @($false, 'Package installation failed. Inspect AppXDeployment-Server logs for the specific cause.')
@@ -89,11 +89,11 @@ function Get-ErrorTranslation {
         '8A15002B' = @($false, 'No applicable update was found. Verify the installed version and requested target before deciding to skip.')
         '8A15002C' = @($false, 'One or more upgrades failed. Review the individual package results and WinGet logs.')
       }
-      Dism = @{
+      Dism   = @{
         '800F081F' = @($false, 'Required source files were not found. Provide a repair source matching the target Windows image and inspect DISM/CBS logs.')
         '800F0906' = @($false, 'Required source files could not be downloaded. Check connectivity and servicing-source policy, or provide a matching local source.')
       }
-      Msi = @{
+      Msi    = @{
         '00000000' = @($true, 'The installer completed successfully.')
         '00000642' = @($false, 'The user cancelled installation. Retry only when installation is still intended.')
         '00000643' = @($false, 'Installation failed. Enable verbose MSI logging and inspect the failure before retrying.')
@@ -153,10 +153,10 @@ function Get-ErrorTranslation {
     $displayCode = '0x' + $selected[0]
     if ($selected[1] -eq 'Msi') { $displayCode = [Convert]::ToUInt32($selected[0], 16).ToString([Globalization.CultureInfo]::InvariantCulture) }
     [PSCustomObject]@{
-      Code = $displayCode
-      Domain = $selected[1]
-      Benign = [bool]$translation[0]
-      Detail = $translation[1]
+      Code    = $displayCode
+      Domain  = $selected[1]
+      Benign  = [bool]$translation[0]
+      Detail  = $translation[1]
       Matched = $true
     }
   }

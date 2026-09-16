@@ -60,8 +60,8 @@ Write-Verbose "Using Pester $($pester.Version)"
 Import-Module Pester -MinimumVersion 5.0.0 -ErrorAction Stop
 
 $config = [PesterConfiguration]@{
-  Run = @{
-    Path = $Path
+  Run    = @{
+    Path     = $Path
     PassThru = $true
   }
   Output = @{

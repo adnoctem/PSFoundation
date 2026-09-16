@@ -34,11 +34,11 @@ function Resolve-LGPOSource {
 
   $sources = @{
     'SCT-LGPO-Standalone' = [PSCustomObject]@{
-      Name = 'Security Compliance Toolkit - LGPO standalone'
-      Url = 'https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip'
-      Sha256 = 'PLACEHOLDER_REPLACE_ON_FIRST_VENDORING'
+      Name               = 'Security Compliance Toolkit - LGPO standalone'
+      Url                = 'https://download.microsoft.com/download/8/5/C/85C25433-A1B0-4FFA-9429-7E023E7DA8D8/LGPO.zip'
+      Sha256             = 'PLACEHOLDER_REPLACE_ON_FIRST_VENDORING'
       ExpectedBinaryPath = 'LGPO_30/LGPO.exe'
-      LastVerified = '2026-06-14'
+      LastVerified       = '2026-06-14'
     }
   }
 
@@ -83,20 +83,20 @@ function Test-LGPOSourceAvailability {
   try {
     $response = Invoke-WebRequest -Uri $info.Url -Method Head -UseBasicParsing -ErrorAction Stop
     [PSCustomObject]@{
-      Source = $Source
-      Url = $info.Url
-      Available = $true
-      StatusCode = [int]$response.StatusCode
+      Source        = $Source
+      Url           = $info.Url
+      Available     = $true
+      StatusCode    = [int]$response.StatusCode
       ContentLength = $response.Headers['Content-Length']
-      CheckedAt = (Get-Date).ToUniversalTime()
+      CheckedAt     = (Get-Date).ToUniversalTime()
     }
   }
   catch {
     [PSCustomObject]@{
-      Source = $Source
-      Url = $info.Url
+      Source    = $Source
+      Url       = $info.Url
       Available = $false
-      Error = $_.Exception.Message
+      Error     = $_.Exception.Message
       CheckedAt = (Get-Date).ToUniversalTime()
     }
   }
@@ -115,10 +115,10 @@ function Install-LGPO {
 
       Writing to the default destination (%ProgramData%) requires
       administrator elevation. A non-elevated session can specify an
-      alternate -Destination within the user's writeable scope.
+      alternate -Destination within the user's writable scope.
     .PARAMETER Destination
       Directory where LGPO.exe ends up. Defaults to %ProgramData%\winkit\tools.
-      Non-elevated callers should supply a user-writeable path.
+      Non-elevated callers should supply a user-writable path.
     .PARAMETER Source
       Source identifier forwarded to Resolve-LGPOSource.
     .PARAMETER Force
@@ -169,7 +169,7 @@ function Install-LGPO {
   }
 
   if (-not (Read-ProcessElevation)) {
-    Write-Error "Writing to '$Destination' requires administrator rights. Run the session elevated or supply a user-writeable -Destination such as '$(Join-Path -Path $env:LOCALAPPDATA -ChildPath 'winkit\tools')'."
+    Write-Error "Writing to '$Destination' requires administrator rights. Run the session elevated or supply a user-writable -Destination such as '$(Join-Path -Path $env:LOCALAPPDATA -ChildPath 'winkit\tools')'."
     return
   }
 
@@ -293,12 +293,12 @@ function Invoke-LGPO {
 
     [PSCustomObject]@{
       PolicyPath = $PolicyPath
-      Mode = if ($isDirectory) { 'GpoBackup' } else { 'TextSource' }
-      ExitCode = $proc.ExitCode
-      StdOut = (Get-Content -LiteralPath $stdoutFile -Raw -ErrorAction SilentlyContinue)
-      StdErr = (Get-Content -LiteralPath $stderrFile -Raw -ErrorAction SilentlyContinue)
-      AppliedAt = (Get-Date).ToUniversalTime()
-      Success = ($proc.ExitCode -eq 0)
+      Mode       = if ($isDirectory) { 'GpoBackup' } else { 'TextSource' }
+      ExitCode   = $proc.ExitCode
+      StdOut     = (Get-Content -LiteralPath $stdoutFile -Raw -ErrorAction SilentlyContinue)
+      StdErr     = (Get-Content -LiteralPath $stderrFile -Raw -ErrorAction SilentlyContinue)
+      AppliedAt  = (Get-Date).ToUniversalTime()
+      Success    = ($proc.ExitCode -eq 0)
     }
   }
   finally {

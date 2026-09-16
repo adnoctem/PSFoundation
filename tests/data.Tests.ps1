@@ -54,14 +54,14 @@ Describe 'Merge-ObjectArrays' {
 
   It 'overrides matching keys by Name' {
     $base = @(@{
-        Name = 'A'
+        Name  = 'A'
         Value = 1
       }, @{
-        Name = 'B'
+        Name  = 'B'
         Value = 2
       })
     $over = @([PSCustomObject]@{
-        Name = 'A'
+        Name  = 'A'
         Value = 99
       })
     Merge-ObjectArrays -Base $base -Overrides $over
@@ -71,11 +71,11 @@ Describe 'Merge-ObjectArrays' {
 
   It 'ignores keys not present on the base object' {
     $base = @(@{
-        Name = 'A'
+        Name  = 'A'
         Value = 1
       })
     $over = @([PSCustomObject]@{
-        Name = 'A'
+        Name  = 'A'
         Value = 99
         Extra = 'dropped'
       })
@@ -87,19 +87,19 @@ Describe 'Merge-ObjectArrays' {
   It 'matches by Path and Name when Path is present on override' {
     $base = @(
       @{
-        Path = 'HKCU:'
-        Name = 'Setting'
+        Path  = 'HKCU:'
+        Name  = 'Setting'
         Value = 1
       }
       @{
-        Path = 'HKLM:'
-        Name = 'Setting'
+        Path  = 'HKLM:'
+        Name  = 'Setting'
         Value = 2
       }
     )
     $over = @([PSCustomObject]@{
-        Path = 'HKLM:'
-        Name = 'Setting'
+        Path  = 'HKLM:'
+        Name  = 'Setting'
         Value = 99
       })
     Merge-ObjectArrays -Base $base -Overrides $over
@@ -109,11 +109,11 @@ Describe 'Merge-ObjectArrays' {
 
   It 'falls back to Name-only match when Path is absent' {
     $base = @(@{
-        Name = 'A'
+        Name  = 'A'
         Value = 1
       })
     $over = @([PSCustomObject]@{
-        Name = 'A'
+        Name  = 'A'
         Value = 99
       })
     Merge-ObjectArrays -Base $base -Overrides $over
@@ -122,12 +122,12 @@ Describe 'Merge-ObjectArrays' {
 
   It 'skips overrides without a Name property' {
     $base = @(@{
-        Name = 'A'
+        Name  = 'A'
         Value = 1
       })
     $over = @([PSCustomObject]@{
         NoName = 'ignored'
-        Value = 99
+        Value  = 99
       })
     Merge-ObjectArrays -Base $base -Overrides $over
     $base[0].Value | Should -Be 1
@@ -135,11 +135,11 @@ Describe 'Merge-ObjectArrays' {
 
   It 'skips overrides where Name is null' {
     $base = @(@{
-        Name = 'A'
+        Name  = 'A'
         Value = 1
       })
     $over = @([PSCustomObject]@{
-        Name = $null
+        Name  = $null
         Value = 99
       })
     Merge-ObjectArrays -Base $base -Overrides $over

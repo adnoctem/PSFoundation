@@ -666,10 +666,10 @@ function Get-ScheduledTaskAction {
       $task = $_
       foreach ($action in $task.Actions) {
         $obj = [PSCustomObject]@{
-          TaskName = $task.TaskName
-          TaskPath = $task.TaskPath
-          State = $task.State
-          Execute = $action.Execute
+          TaskName  = $task.TaskName
+          TaskPath  = $task.TaskPath
+          State     = $task.State
+          Execute   = $action.Execute
           Arguments = $action.Arguments
         }
         if ($SuspiciousOnly) {
@@ -709,9 +709,9 @@ function Get-WMIPersistence {
   param()
 
   [PSCustomObject]@{
-    EventFilters = @(Get-CimInstance -Namespace root\subscription -ClassName __EventFilter -ErrorAction SilentlyContinue)
+    EventFilters         = @(Get-CimInstance -Namespace root\subscription -ClassName __EventFilter -ErrorAction SilentlyContinue)
     CommandLineConsumers = @(Get-CimInstance -Namespace root\subscription -ClassName CommandLineEventConsumer -ErrorAction SilentlyContinue)
-    Bindings = @(Get-CimInstance -Namespace root\subscription -ClassName __FilterToConsumerBinding -ErrorAction SilentlyContinue)
+    Bindings             = @(Get-CimInstance -Namespace root\subscription -ClassName __FilterToConsumerBinding -ErrorAction SilentlyContinue)
   }
 }
 
@@ -1007,10 +1007,10 @@ function Get-WindowsEventByDefinition {
         }
 
         $filter = @{
-          LogName = $log
-          Id = $ids
+          LogName   = $log
+          Id        = $ids
           StartTime = $StartTime
-          EndTime = $EndTime
+          EndTime   = $EndTime
         }
 
         if ($MaxEvents) {
@@ -1145,36 +1145,36 @@ function ConvertFrom-WinEvent {
     }
 
     [pscustomobject] @{
-      TimeCreated = $Event.TimeCreated
-      Id = $Event.Id
-      ProviderName = $Event.ProviderName
-      LogName = $Event.LogName
-      MachineName = $Event.MachineName
-      RecordId = $Event.RecordId
-      LevelDisplayName = $Event.LevelDisplayName
-      TargetUserName = $rawData['TargetUserName']
-      TargetDomainName = $rawData['TargetDomainName']
-      SubjectUserName = $rawData['SubjectUserName']
-      SubjectDomainName = $rawData['SubjectDomainName']
-      LogonType = $logonType
-      LogonTypeName = $logonTypeName
-      ImpersonationLevel = $rawData['ImpersonationLevel']
-      ImpersonationLevelName = $impersonationLevelName
-      IpAddress = $rawData['IpAddress']
-      IpPort = $rawData['IpPort']
-      WorkstationName = $rawData['WorkstationName']
-      ProcessName = $rawData['ProcessName']
-      ProcessId = $rawData['ProcessId']
-      LogonProcessName = $rawData['LogonProcessName']
+      TimeCreated               = $Event.TimeCreated
+      Id                        = $Event.Id
+      ProviderName              = $Event.ProviderName
+      LogName                   = $Event.LogName
+      MachineName               = $Event.MachineName
+      RecordId                  = $Event.RecordId
+      LevelDisplayName          = $Event.LevelDisplayName
+      TargetUserName            = $rawData['TargetUserName']
+      TargetDomainName          = $rawData['TargetDomainName']
+      SubjectUserName           = $rawData['SubjectUserName']
+      SubjectDomainName         = $rawData['SubjectDomainName']
+      LogonType                 = $logonType
+      LogonTypeName             = $logonTypeName
+      ImpersonationLevel        = $rawData['ImpersonationLevel']
+      ImpersonationLevelName    = $impersonationLevelName
+      IpAddress                 = $rawData['IpAddress']
+      IpPort                    = $rawData['IpPort']
+      WorkstationName           = $rawData['WorkstationName']
+      ProcessName               = $rawData['ProcessName']
+      ProcessId                 = $rawData['ProcessId']
+      LogonProcessName          = $rawData['LogonProcessName']
       AuthenticationPackageName = $rawData['AuthenticationPackageName']
-      Status = $rawData['Status']
-      SubStatus = $rawData['SubStatus']
-      TargetLogonId = $rawData['TargetLogonId']
-      ServiceName = $rawData['ServiceName']
-      ImagePath = $rawData['ImagePath']
-      ServiceFileName = $rawData['ServiceFileName']
-      RawData = $rawData
-      EventRecord = $Event
+      Status                    = $rawData['Status']
+      SubStatus                 = $rawData['SubStatus']
+      TargetLogonId             = $rawData['TargetLogonId']
+      ServiceName               = $rawData['ServiceName']
+      ImagePath                 = $rawData['ImagePath']
+      ServiceFileName           = $rawData['ServiceFileName']
+      RawData                   = $rawData
+      EventRecord               = $Event
     }
   }
 }
@@ -1248,9 +1248,9 @@ function Get-WindowsLogonEvent {
   }
 
   $queryParams = @{
-    Group = 'Logon'
-    StartTime = $StartTime
-    EndTime = $EndTime
+    Group         = 'Logon'
+    StartTime     = $StartTime
+    EndTime       = $EndTime
     Configuration = $Configuration
   }
   if ($ComputerName) { $queryParams.ComputerName = $ComputerName }
@@ -1355,9 +1355,9 @@ function Get-WindowsAccountChangeEvent {
   }
 
   $queryParams = @{
-    Group = 'AccountChange'
-    StartTime = $StartTime
-    EndTime = $EndTime
+    Group         = 'AccountChange'
+    StartTime     = $StartTime
+    EndTime       = $EndTime
     Configuration = $Configuration
   }
   if ($ComputerName) { $queryParams.ComputerName = $ComputerName }
@@ -1432,9 +1432,9 @@ function Get-WindowsServiceEvent {
   }
 
   $queryParams = @{
-    Group = 'Service'
-    StartTime = $StartTime
-    EndTime = $EndTime
+    Group         = 'Service'
+    StartTime     = $StartTime
+    EndTime       = $EndTime
     Configuration = $Configuration
   }
   if ($ComputerName) { $queryParams.ComputerName = $ComputerName }
@@ -1504,9 +1504,9 @@ function Get-WindowsBootEvent {
   }
 
   $queryParams = @{
-    Group = 'BootShutdown'
-    StartTime = $StartTime
-    EndTime = $EndTime
+    Group         = 'BootShutdown'
+    StartTime     = $StartTime
+    EndTime       = $EndTime
     Configuration = $Configuration
   }
   if ($ComputerName) { $queryParams.ComputerName = $ComputerName }
@@ -1587,9 +1587,9 @@ function Get-WindowsPowerShellEvent {
   }
 
   $queryParams = @{
-    Group = 'PowerShell'
-    StartTime = $StartTime
-    EndTime = $EndTime
+    Group         = 'PowerShell'
+    StartTime     = $StartTime
+    EndTime       = $EndTime
     Configuration = $Configuration
   }
   if ($ComputerName) { $queryParams.ComputerName = $ComputerName }
@@ -1687,9 +1687,9 @@ function Get-WindowsScheduledTaskEvent {
   }
 
   $queryParams = @{
-    Group = 'ScheduledTask'
-    StartTime = $StartTime
-    EndTime = $EndTime
+    Group         = 'ScheduledTask'
+    StartTime     = $StartTime
+    EndTime       = $EndTime
     Configuration = $Configuration
   }
   if ($ComputerName) { $queryParams.ComputerName = $ComputerName }
@@ -1778,11 +1778,11 @@ function Get-WindowsSysmonEvent {
   }
 
   $queryParams = @{
-    Group = 'Sysmon'
-    StartTime = $StartTime
-    EndTime = $EndTime
+    Group              = 'Sysmon'
+    StartTime          = $StartTime
+    EndTime            = $EndTime
     SkipMissingChannel = $true
-    Configuration = $Configuration
+    Configuration      = $Configuration
   }
   if ($ComputerName) { $queryParams.ComputerName = $ComputerName }
   if ($MaxEvents) { $queryParams.MaxEvents = $MaxEvents }

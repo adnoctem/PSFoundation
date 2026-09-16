@@ -8,31 +8,31 @@
 @{
 
   # Script module or binary module file associated with this manifest.
-  RootModule = 'PSFoundation.psm1'
+  RootModule            = 'PSFoundation.psm1'
 
   # Version number of this module.
-  ModuleVersion = '1.3.0'
+  ModuleVersion         = '1.3.0'
 
   # Supported PSEditions
-  CompatiblePSEditions = @('Desktop', 'Core')
+  CompatiblePSEditions  = @('Desktop', 'Core')
 
   # ID used to uniquely identify this module
-  GUID = '73aa2e6a-815c-4bcc-b8f8-053e1c07ae7b'
+  GUID                  = '73aa2e6a-815c-4bcc-b8f8-053e1c07ae7b'
 
   # Author of this module
-  Author = 'MVProwess'
+  Author                = 'MVProwess'
 
   # Company or vendor of this module
-  CompanyName = 'Ad Noctem Collective'
+  CompanyName           = 'Ad Noctem Collective'
 
   # Copyright statement for this module
-  Copyright = '(c) MVProwess. All rights reserved.'
+  Copyright             = '(c) MVProwess. All rights reserved.'
 
   # Description of the functionality provided by this module
-  Description = 'A foundational PowerShell module library for Windows administration, providing registry, networking, security, package management, and system utilities.'
+  Description           = 'A foundational PowerShell module library for Windows administration, providing registry, networking, security, package management, and system utilities.'
 
   # Minimum version of the PowerShell engine required by this module
-  PowerShellVersion = '5.1'
+  PowerShellVersion     = '5.1'
 
   # Name of the PowerShell host required by this module
   # PowerShellHostName = ''
@@ -50,9 +50,9 @@
   ProcessorArchitecture = 'None'
 
   # Modules that must be imported into the global environment prior to importing this module
-  RequiredModules = @(
+  RequiredModules       = @(
     @{
-      ModuleName = "PSWindowsUpdate"
+      ModuleName    = "PSWindowsUpdate"
       ModuleVersion = '2.2.1.5'
     }
     # @{ ModuleName = "PSReadLine"; ModuleVersion = '2.4.5' }
@@ -74,7 +74,7 @@
   # NestedModules = @()
 
   # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-  FunctionsToExport = @(
+  FunctionsToExport     = @(
     'New-OperationResult',
     'Add-OperationResult',
     'Write-OperationResultLog',
@@ -233,13 +233,13 @@
   )
 
   # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export. (none)
-  CmdletsToExport = @()
+  CmdletsToExport       = @()
 
   # Variables to export from this module (none)
-  VariablesToExport = @()
+  VariablesToExport     = @()
 
   # Aliases to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no aliases to export.
-  AliasesToExport = @(
+  AliasesToExport       = @(
     'Get-Network',
     'Get-Prefix',
     'Get-NetworkCIDR',
@@ -256,26 +256,26 @@
   # FileList = @()
 
   # Private data to pass to the module specified in RootModule/ModuleToProcess. This may also contain a PSData hashtable with additional module metadata used by PowerShell.
-  PrivateData = @{
+  PrivateData           = @{
     PSData = @{
       # Tags applied to this module. These help with module discovery in online galleries.
-      Tags = @(
+      Tags                     = @(
         'PowerShell', 'PSEdition_Core', 'PSEdition_Desktop',
         'Library', 'Windows', 'administration', 'installation',
         'configuration', 'management', 'PSFoundation'
       )
 
       # A URL to the license for this module.
-      LicenseUri = 'https://opensource.org/license/mit'
+      LicenseUri               = 'https://opensource.org/license/mit'
 
       # A URL to the main website for this project.
-      ProjectUri = 'https://github.com/adnoctem/PSFoundation'
+      ProjectUri               = 'https://github.com/adnoctem/PSFoundation'
 
       # A URL to an icon representing this module.
-      IconUri = 'https://raw.githubusercontent.com/PowerShell/PowerShell/master/assets/Powershell_256.png'
+      IconUri                  = 'https://raw.githubusercontent.com/PowerShell/PowerShell/master/assets/Powershell_256.png'
 
       # ReleaseNotes of this module
-      ReleaseNotes = 'https://github.com/adnoctem/PSFoundation/releases'
+      ReleaseNotes             = 'https://github.com/adnoctem/PSFoundation/releases'
 
       # Prerelease string of this module
       # Prerelease = 'beta'

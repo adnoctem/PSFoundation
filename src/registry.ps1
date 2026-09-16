@@ -3,15 +3,15 @@
 # Registry:: provider path because their short PS drives are not guaranteed to
 # exist in Windows PowerShell 5.1.
 $script:HiveMap = @{
-  'HKLM' = 'HKLM:'
-  'HKCU' = 'HKCU:'
-  'HKCR' = 'Registry::HKEY_CLASSES_ROOT'
-  'HKU' = 'Registry::HKEY_USERS'
-  'HKCC' = 'Registry::HKEY_CURRENT_CONFIG'
-  'HKEY_LOCAL_MACHINE' = 'HKLM:'
-  'HKEY_CURRENT_USER' = 'HKCU:'
-  'HKEY_CLASSES_ROOT' = 'Registry::HKEY_CLASSES_ROOT'
-  'HKEY_USERS' = 'Registry::HKEY_USERS'
+  'HKLM'                = 'HKLM:'
+  'HKCU'                = 'HKCU:'
+  'HKCR'                = 'Registry::HKEY_CLASSES_ROOT'
+  'HKU'                 = 'Registry::HKEY_USERS'
+  'HKCC'                = 'Registry::HKEY_CURRENT_CONFIG'
+  'HKEY_LOCAL_MACHINE'  = 'HKLM:'
+  'HKEY_CURRENT_USER'   = 'HKCU:'
+  'HKEY_CLASSES_ROOT'   = 'Registry::HKEY_CLASSES_ROOT'
+  'HKEY_USERS'          = 'Registry::HKEY_USERS'
   'HKEY_CURRENT_CONFIG' = 'Registry::HKEY_CURRENT_CONFIG'
 }
 
@@ -126,15 +126,15 @@ function Resolve-RegistryPath {
   # Short hive name -> .NET RegistryHive (kept here for this function only;
   # higher-level functions rely on the provider cmdlets instead.)
   $_hiveEnum = @{
-    'HKLM' = [Microsoft.Win32.RegistryHive]::LocalMachine
-    'HKCU' = [Microsoft.Win32.RegistryHive]::CurrentUser
-    'HKCR' = [Microsoft.Win32.RegistryHive]::ClassesRoot
-    'HKU' = [Microsoft.Win32.RegistryHive]::Users
-    'HKCC' = [Microsoft.Win32.RegistryHive]::CurrentConfig
-    'HKEY_LOCAL_MACHINE' = [Microsoft.Win32.RegistryHive]::LocalMachine
-    'HKEY_CURRENT_USER' = [Microsoft.Win32.RegistryHive]::CurrentUser
-    'HKEY_CLASSES_ROOT' = [Microsoft.Win32.RegistryHive]::ClassesRoot
-    'HKEY_USERS' = [Microsoft.Win32.RegistryHive]::Users
+    'HKLM'                = [Microsoft.Win32.RegistryHive]::LocalMachine
+    'HKCU'                = [Microsoft.Win32.RegistryHive]::CurrentUser
+    'HKCR'                = [Microsoft.Win32.RegistryHive]::ClassesRoot
+    'HKU'                 = [Microsoft.Win32.RegistryHive]::Users
+    'HKCC'                = [Microsoft.Win32.RegistryHive]::CurrentConfig
+    'HKEY_LOCAL_MACHINE'  = [Microsoft.Win32.RegistryHive]::LocalMachine
+    'HKEY_CURRENT_USER'   = [Microsoft.Win32.RegistryHive]::CurrentUser
+    'HKEY_CLASSES_ROOT'   = [Microsoft.Win32.RegistryHive]::ClassesRoot
+    'HKEY_USERS'          = [Microsoft.Win32.RegistryHive]::Users
     'HKEY_CURRENT_CONFIG' = [Microsoft.Win32.RegistryHive]::CurrentConfig
   }
 
@@ -223,9 +223,9 @@ function Get-RegistryKey {
         ForEach-Object { if ($_.Name -eq '(default)') { '' } else { $_.Name } })
 
     [PSCustomObject]@{
-      Path = $Path
+      Path    = $Path
       SubKeys = $_subKeys
-      Values = $_values
+      Values  = $_values
     }
   }
   catch [System.UnauthorizedAccessException] {
@@ -277,7 +277,7 @@ function Set-RegistryKey {
   if (Test-Path -Path $_providerPath) {
     Write-Verbose "Registry key already exists: '$Path'"
     return [PSCustomObject]@{
-      Path = $Path
+      Path   = $Path
       Status = 'AlreadyExists'
     }
   }
@@ -288,7 +288,7 @@ function Set-RegistryKey {
       $null = New-Item -Path $_providerPath -Force -ErrorAction Stop
       Write-Verbose "Created registry key: '$Path'"
       return [PSCustomObject]@{
-        Path = $Path
+        Path   = $Path
         Status = 'Created'
       }
     }
@@ -350,7 +350,7 @@ function Remove-RegistryKey {
   if (-not (Test-Path -Path $_providerPath)) {
     Write-Verbose "Registry key does not exist (nothing to remove): '$Path'"
     return [PSCustomObject]@{
-      Path = $Path
+      Path   = $Path
       Status = 'NotFound'
     }
   }
@@ -361,7 +361,7 @@ function Remove-RegistryKey {
       $null = Remove-Item -Path $_providerPath -Recurse:$Recurse -Force -ErrorAction Stop
       Write-Verbose "Removed registry key: '$Path'"
       return [PSCustomObject]@{
-        Path = $Path
+        Path   = $Path
         Status = 'Removed'
       }
     }
@@ -576,8 +576,8 @@ function Set-RegistryValue {
       if ($_isSameValue -and $_isSameKind) {
         Write-Verbose "Registry value '$Name' already set to the requested data in '$Path'"
         return [PSCustomObject]@{
-          Path = $Path
-          Name = $Name
+          Path   = $Path
+          Name   = $Name
           Status = 'Unchanged'
         }
       }
@@ -587,8 +587,8 @@ function Set-RegistryValue {
         $null = Set-ItemProperty -Path $_providerPath -Name $_resolvedName -Value $Value -Type $Type -ErrorAction Stop
         Write-Verbose "Updated registry value '$Name' in '$Path'"
         return [PSCustomObject]@{
-          Path = $Path
-          Name = $Name
+          Path   = $Path
+          Name   = $Name
           Status = 'Updated'
         }
       }
@@ -599,8 +599,8 @@ function Set-RegistryValue {
         $null = Set-ItemProperty -Path $_providerPath -Name $_resolvedName -Value $Value -Type $Type -ErrorAction Stop
         Write-Verbose "Created registry value '$Name' in '$Path'"
         return [PSCustomObject]@{
-          Path = $Path
-          Name = $Name
+          Path   = $Path
+          Name   = $Name
           Status = 'Created'
         }
       }
@@ -654,8 +654,8 @@ function Remove-RegistryValue {
   if (-not (Test-Path -Path $_providerPath)) {
     Write-Verbose "Registry key not found (nothing to remove): '$Path'"
     return [PSCustomObject]@{
-      Path = $Path
-      Name = $Name
+      Path   = $Path
+      Name   = $Name
       Status = 'KeyNotFound'
     }
   }
@@ -669,8 +669,8 @@ function Remove-RegistryValue {
     catch {
       Write-Verbose "Registry value '$Name' does not exist in '$Path' (nothing to remove)"
       return [PSCustomObject]@{
-        Path = $Path
-        Name = $Name
+        Path   = $Path
+        Name   = $Name
         Status = 'NotFound'
       }
     }
@@ -679,8 +679,8 @@ function Remove-RegistryValue {
       $null = Remove-ItemProperty -Path $_providerPath -Name $_resolvedName -ErrorAction Stop
       Write-Verbose "Removed registry value '$Name' from '$Path'"
       return [PSCustomObject]@{
-        Path = $Path
-        Name = $Name
+        Path   = $Path
+        Name   = $Name
         Status = 'Removed'
       }
     }
