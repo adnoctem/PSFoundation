@@ -147,7 +147,7 @@ Describe 'ConvertTo-RegistrySettingResult' {
       Description = 'A test setting'
     }
 
-    $results = ConvertTo-RegistrySettingResult -Settings @($setting) -DryRun
+    $results = @(ConvertTo-RegistrySettingResult -Settings @($setting) -DryRun)
     $results.Count | Should -Be 1
     $results[0].Status | Should -Be 'Skipped'
     $results[0].Detail | Should -Be 'DryRun'

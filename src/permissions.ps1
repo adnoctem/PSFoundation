@@ -42,6 +42,33 @@ function Test-Elevation {
 # CHANGE-NOTE: drop this alias after updating references.
 Set-Alias -Name Read-ProcessElevation -Value Test-Elevation
 
+function ConvertTo-PSFElevationLiteral {
+  # Only inert values may become literals in the encoded relaunch command.
+  # Quote every string, including parameter names, so input cannot become code.
+  [CmdletBinding()]
+  [OutputType([string])]
+  param ([AllowNull()][AllowEmptyString()][object]$Value)
+
+  if ($null -eq $Value) { return '$null' }
+  if ($Value -is [bool] -or $Value -is [System.Management.Automation.SwitchParameter]) {
+    if ([bool]$Value) { return '$true' }
+    return '$false'
+  }
+  if ($Value -is [string] -or $Value -is [char]) {
+    # PowerShell recognizes typographic apostrophes as delimiters too.
+    return "'" + [System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent([string]$Value) + "'"
+  }
+  if ($Value -is [array]) {
+    $items = @(foreach ($item in $Value) { ConvertTo-PSFElevationLiteral -Value $item })
+    return '@(' + ($items -join ',') + ')'
+  }
+  $numericTypes = @('Byte', 'SByte', 'Int16', 'UInt16', 'Int32', 'UInt32', 'Int64', 'UInt64', 'Single', 'Double', 'Decimal')
+  if ($Value.GetType().Name -in $numericTypes -and $Value.GetType().Namespace -eq 'System') {
+    return '([System.' + $Value.GetType().Name + "]'" + $Value.ToString([Globalization.CultureInfo]::InvariantCulture) + "')"
+  }
+  throw "Cannot forward elevation argument of type '$($Value.GetType().FullName)'. Use strings, numbers, booleans, switches, or arrays of these values."
+}
+
 function Request-AdministratorPrivilege {
   <#
     .SYNOPSIS
@@ -70,7 +97,7 @@ function Request-AdministratorPrivilege {
           cmd.exe launchers checking %ERRORLEVEL% and CI see the real result.
         * Handles UAC denial gracefully (clear message + non-zero exit) instead
           of an unhandled Win32Exception.
-        * Guards against an infinite re-launch loop via an environment marker,
+        * Guards against an infinite re-launch loop via an explicit switch,
           in case elevation "succeeds" but the token still isn't elevated
           (rare UAC/GPO configurations).
 
@@ -83,7 +110,11 @@ function Request-AdministratorPrivilege {
     .PARAMETER BoundParameters
       The calling script's $PSBoundParameters, used to faithfully reconstruct
       named parameters and switches for the elevated re-launch. Strongly
-      recommended; pass $PSBoundParameters from the caller.
+      recommended; pass $PSBoundParameters from the caller. Supports strings,
+      numbers, booleans, switches, nulls, and arrays of these values. Other
+      object types are rejected before launching. The reserved Elevated switch
+      is always set to true in the child. Arguments are encoded, not encrypted;
+      do not pass secrets on the command line.
     .PARAMETER ArgumentList
       Any unbound/positional arguments ($args from the caller) to append after
       the reconstructed bound parameters.
@@ -142,7 +173,7 @@ function Request-AdministratorPrivilege {
   # boundary) or a bare argument token (which a CmdletBinding param block would
   # reject) — an explicit switch the caller declares is unambiguous.
   if ($IsElevatedRelaunch) {
-    Write-Error ('Elevation was attempted but the process is still not elevated. ' +
+    Write-Error -ErrorAction Continue ('Elevation was attempted but the process is still not elevated. ' +
       'Check UAC / Group Policy settings (e.g. "Run all administrators in Admin Approval Mode"). ' +
       'Aborting to avoid a re-launch loop.')
     exit 1
@@ -167,60 +198,57 @@ function Request-AdministratorPrivilege {
     throw 'Could not determine the current PowerShell host executable path.'
   }
 
-  # Faithfully reconstruct the argument list for the elevated re-launch.
-  $reArgs = [System.Collections.Generic.List[string]]::new()
-  $reArgs.Add('-NoProfile')
-  $reArgs.Add('-ExecutionPolicy'); $reArgs.Add('Bypass')
-  $reArgs.Add('-File'); $reArgs.Add($ScriptPath)
-
-  if ($BoundParameters) {
+  # Splat inert literals inside an encoded command. Native -File argument
+  # binding cannot preserve arrays or explicit false switches on PS 5.1.
+  $named = [System.Collections.Generic.List[string]]::new()
+  if ($null -ne $BoundParameters) {
     foreach ($name in $BoundParameters.Keys) {
-      $value = $BoundParameters[$name]
-      if ($value -is [System.Management.Automation.SwitchParameter]) {
-        # Switches: include the flag only when present/true. Use -Name:$true form
-        # so the elevated copy receives an explicit value, avoiding ambiguity.
-        if ($value.IsPresent) { $reArgs.Add("-$name") }
-      }
-      elseif ($value -is [bool]) {
-        $reArgs.Add("-$name`:$([bool]$value)")
-      }
-      elseif ($null -ne $value) {
-        # Arrays -> repeat the parameter for each element so [string[]] params
-        # round-trip correctly (e.g. -VCRedistVersions 14.0,12.0).
-        foreach ($item in @($value)) {
-          $reArgs.Add("-$name")
-          $reArgs.Add([string]$item)
-        }
-      }
+      if ($name -eq 'Elevated') { continue }
+      $keyLiteral = ConvertTo-PSFElevationLiteral -Value ([string]$name)
+      $valueLiteral = ConvertTo-PSFElevationLiteral -Value $BoundParameters[$name]
+      $named.Add($keyLiteral + '=' + $valueLiteral)
     }
   }
-
-  if ($ArgumentList) {
-    foreach ($a in $ArgumentList) { $reArgs.Add([string]$a) }
-  }
-
-  # Inject the elevation marker switch so the re-launched child can pass it back
-  # into this function as -IsElevatedRelaunch and trip the loop guard if needed.
-  # The caller's param block must declare a [switch]$Elevated for this to bind.
-  if ($BoundParameters -and -not $BoundParameters.Contains('Elevated')) {
-    $reArgs.Add('-Elevated')
-  }
-  elseif (-not $BoundParameters) {
-    $reArgs.Add('-Elevated')
-  }
+  $named.Add("'Elevated'=`$true")
+  $scriptLiteral = ConvertTo-PSFElevationLiteral -Value $ScriptPath
+  $argumentLiteral = '@()'
+  if ($null -ne $ArgumentList) { $argumentLiteral = ConvertTo-PSFElevationLiteral -Value $ArgumentList }
 
   # Preserve the working directory across the RunAs boundary. Start-Process
   # -Verb RunAs otherwise launches in system32, breaking relative paths the
   # elevated script might use.
   $workingDir = (Get-Location -PSProvider FileSystem).ProviderPath
+  $directoryLiteral = ConvertTo-PSFElevationLiteral -Value $workingDir
+  $command = @'
+$global:LASTEXITCODE = 0
+try {{
+  Set-Location -LiteralPath {0} -ErrorAction Stop
+  $psfNamed = @{{{1}}}
+  $psfArguments = {2}
+  & {3} @psfNamed @psfArguments
+  $psfSucceeded = $?
+  if ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }}
+  if (-not $psfSucceeded) {{ exit 1 }}
+  exit $LASTEXITCODE
+}} catch {{
+  Write-Error -ErrorRecord $_ -ErrorAction Continue
+  exit 1
+}}
+'@
+  $command = $command -f $directoryLiteral, ($named -join ';'), $argumentLiteral, $scriptLiteral
+  $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+  if ($encodedCommand.Length -gt 30000) {
+    throw 'Elevation arguments exceed the Windows command-line limit. Pass a configuration file path instead.'
+  }
 
   $startInfo = @{
     FilePath = $hostExe
-    ArgumentList = $reArgs.ToArray()
+    ArgumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand)
     Verb = 'RunAs'
     WorkingDirectory = $workingDir
     PassThru = $true
     Wait = $true
+    ErrorAction = 'Stop'
   }
 
   try {
@@ -231,7 +259,7 @@ function Request-AdministratorPrivilege {
   catch [System.ComponentModel.Win32Exception] {
     # 1223 = ERROR_CANCELLED — user clicked "No" on the UAC prompt.
     if ($_.Exception.NativeErrorCode -eq 1223) {
-      Write-Error 'Elevation was cancelled by the user. Administrator privileges are required to continue.'
+      Write-Error -ErrorAction Continue 'Elevation was cancelled by the user. Administrator privileges are required to continue.'
       exit 1223
     }
     throw

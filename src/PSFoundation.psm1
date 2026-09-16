@@ -28,6 +28,9 @@ $publicFunctions = @(
   'Export-RegistrySettingState',
   'ConvertTo-RegistrySettingResult',
 
+  # errors.ps1
+  'Get-ErrorTranslation',
+
   # data.ps1
   'Convert-Quote',
   'Merge-ObjectArrays',
@@ -184,6 +187,8 @@ $publicFunctions = @(
   'New-DjoinFile',
 
   # policies.ps1
+  'ConvertFrom-RegistryPolicy',
+  'ConvertTo-RegistryPolicy',
   'Resolve-LGPOSource',
   'Test-LGPOSourceAvailability',
   'Install-LGPO',
