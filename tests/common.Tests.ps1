@@ -7,6 +7,34 @@ BeforeAll {
 }
 
 Describe 'New-OperationResult' {
+  It 'keeps optional outcome fields absent unless explicitly supplied' {
+    $plain = New-OperationResult -Target 'A' -Action 'Set' -Status 'Completed'
+    $plain.PSObject.Properties.Name | Should -Not -Contain 'Changed'
+    $result = New-OperationResult -Target 'A' -Action 'Set' -Status 'Completed' -Changed $false -AlreadyCompliant $true -Before $null -After 0 -ExitCode 0 -RebootRequired $false -Duration ([timespan]::FromSeconds(2)) -RunId 'run-1'
+    $result.Changed | Should -BeFalse
+    $result.AlreadyCompliant | Should -BeTrue
+    $result.PSObject.Properties.Name | Should -Contain 'Before'
+    $result.Before | Should -BeNull
+    $result.After | Should -Be 0
+    $result.ExitCode | Should -Be 0
+    $result.RebootRequired | Should -BeFalse
+    $result.Duration.TotalSeconds | Should -Be 2
+    $result.RunId | Should -Be 'run-1'
+  }
+
+  It 'forwards outcome metadata through the collection and JSON Lines helpers' {
+    $results = [Collections.ArrayList]::new()
+    Add-OperationResult -Results $results -Target 'A' -Action 'Set' -Status 'Completed' -Changed $false -Before $null -RunId 'operation-run'
+    Add-OperationResult -Results $results -Target 'B' -Action 'Set' -Status 'Completed' -ExitCode 3010 -RebootRequired $true
+    $path = Write-OperationResultLog -Results $results -Path (Join-Path $TestDrive 'results.jsonl') -RunId 'batch-run'
+    $lines = @(Get-Content -LiteralPath $path | ForEach-Object { $_ | ConvertFrom-Json })
+    $lines.Count | Should -Be 2
+    $lines[0].RunId | Should -Be 'operation-run'
+    $lines[0].Changed | Should -BeFalse
+    $lines[1].RunId | Should -Be 'batch-run'
+    $lines[1].RebootRequired | Should -BeTrue
+  }
+
   It 'produces a PSCustomObject with Target, Action, and Status' {
     $result = New-OperationResult -Target 'TestTarget' -Action 'Install' -Status 'Completed'
     $result | Should -BeOfType [PSCustomObject]

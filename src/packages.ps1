@@ -64,6 +64,28 @@ function New-PackageLifecycleResult {
       Optional reason when Status is Skipped.
     .PARAMETER ErrorMessage
       Optional error detail when Status is Failed.
+    .PARAMETER ErrorRecord
+      Original failure record, retained alongside its message and translation.
+    .PARAMETER ErrorDomain
+      Optional translation domain for native codes or caught errors.
+    .PARAMETER Changed
+      Optional known state-change flag.
+    .PARAMETER AlreadyCompliant
+      Optional initial compliance flag.
+    .PARAMETER Before
+      Optional initial state.
+    .PARAMETER After
+      Optional observed final state.
+    .PARAMETER ExitCode
+      Native process exit code.
+    .PARAMETER RebootRequired
+      Whether the installer reports that a restart is required.
+    .PARAMETER Duration
+      Elapsed operation time.
+    .PARAMETER RunId
+      Identifier shared by results from one run.
+    .PARAMETER Property
+      Additional provider-specific fields.
     .EXAMPLE
       PS> New-PackageLifecycleResult -Target 'Microsoft.GetHelp' -Source 'UPFAppxPackage' -Action 'Uninstall' -Status 'Skipped' -SkippedReason 'NoMatch'
     .LINK
@@ -82,10 +104,44 @@ function New-PackageLifecycleResult {
     [string]$Action,
     [string]$Status,
     [string]$SkippedReason,
-    [string]$ErrorMessage
+    [string]$ErrorMessage,
+    [System.Management.Automation.ErrorRecord]$ErrorRecord,
+    [ValidateSet('Appx', 'Winget', 'Dism', 'Msi')][string]$ErrorDomain,
+    [bool]$Changed,
+    [bool]$AlreadyCompliant,
+    [AllowNull()][object]$Before,
+    [AllowNull()][object]$After,
+    [int]$ExitCode,
+    [bool]$RebootRequired,
+    [timespan]$Duration,
+    [string]$RunId,
+    [hashtable]$Property
   )
 
-  New-OperationResult -Target $Target -Source $Source -Action $Action -Status $Status -SkippedReason $SkippedReason -ErrorMessage $ErrorMessage
+  $params = @{ Target = $Target; Source = $Source; Action = $Action; Status = $Status; SkippedReason = $SkippedReason; ErrorMessage = $ErrorMessage }
+  foreach ($field in @('Changed', 'AlreadyCompliant', 'Before', 'After', 'ExitCode', 'RebootRequired', 'Duration', 'RunId')) {
+    if ($PSBoundParameters.ContainsKey($field)) { $params[$field] = $PSBoundParameters[$field] }
+  }
+  $metadata = @{}
+  if ($Property) { foreach ($key in $Property.Keys) { $metadata[$key] = $Property[$key] } }
+  if ($ErrorRecord) {
+    $metadata.ErrorRecord = $ErrorRecord
+    if (-not $PSBoundParameters.ContainsKey('ErrorMessage')) { $params.ErrorMessage = $ErrorRecord.Exception.Message }
+  }
+  if (-not $ErrorDomain) {
+    $inferredDomain = switch ($Source) {
+      'WinGet' { 'Winget' }
+      { $_ -in @('UPFAppxPackage', 'Installed', 'Provisioned') } { 'Appx' }
+    }
+    if ($inferredDomain) { $ErrorDomain = $inferredDomain }
+  }
+  if ($ErrorDomain -and ($ErrorRecord -or $PSBoundParameters.ContainsKey('ExitCode')) -and (Get-Command -Name Get-ErrorTranslation -ErrorAction SilentlyContinue)) {
+    $translation = $null
+    if ($ErrorRecord) { $translation = Get-ErrorTranslation -ErrorRecord $ErrorRecord -Domain $ErrorDomain }
+    elseif ($PSBoundParameters.ContainsKey('ExitCode')) { $translation = Get-ErrorTranslation -Code $ExitCode -Domain $ErrorDomain }
+    if ($translation) { $metadata.ErrorTranslation = $translation }
+  }
+  New-OperationResult @params -Property $metadata
 }
 
 function Get-InstalledProgramCount {
@@ -345,6 +401,13 @@ function Install-Win32Program {
       Return process exit code information in the lifecycle status.
     .PARAMETER DryRun
       Preview the installer invocation without starting the process.
+    .PARAMETER SuccessExitCodes
+      Exit codes considered successful. Defaults to standard Windows installer
+      success and restart codes: 0, 1641 and 3010. Override for other installers.
+    .PARAMETER RebootExitCodes
+      Successful exit codes that also indicate a restart. Defaults to 1641, 3010.
+    .PARAMETER RunId
+      Optional identifier shared with other operation results.
     .EXAMPLE
       PS> Install-Win32Program -Path 'C:\Installers\AppSetup.exe' -ArgumentList '/quiet','/norestart'
     .EXAMPLE
@@ -367,36 +430,53 @@ function Install-Win32Program {
 
     [switch]$NoWait,
     [switch]$PassThru,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [int[]]$SuccessExitCodes = @(0, 1641, 3010),
+    [int[]]$RebootExitCodes = @(1641, 3010),
+    [string]$RunId
   )
 
   if ($DryRun) { $WhatIfPreference = $true }
 
   $_target = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
-  $_argumentText = if ($ArgumentList) { $ArgumentList -join ' ' } else { '' }
-
-  if (-not $PSCmdlet.ShouldProcess($_target, "Install Win32 program $_argumentText")) {
-    return New-PackageLifecycleResult -Target $_target -Source 'Win32Program' -Action 'Install' -Status 'Skipped' -SkippedReason 'WhatIf'
+  $_runParams = @{}
+  if ($PSBoundParameters.ContainsKey('RunId')) { $_runParams.RunId = $RunId }
+  if (-not $PSCmdlet.ShouldProcess($_target, 'Install Win32 program')) {
+    return New-PackageLifecycleResult -Target $_target -Source 'Win32Program' -Action 'Install' -Status 'Skipped' -SkippedReason 'WhatIf' -Changed $false @_runParams
   }
 
+  $_clock = [System.Diagnostics.Stopwatch]::StartNew()
+  $_process = $null
   try {
     $_params = @{
       FilePath    = $_target
       ErrorAction = 'Stop'
     }
-    if ($ArgumentList) { $_params.ArgumentList = $ArgumentList }
+    if ($ArgumentList) { $_params.ArgumentList = ConvertTo-PSFNativeArgumentString -ArgumentList $ArgumentList }
     if (-not $NoWait) { $_params.Wait = $true }
-    if ($PassThru) { $_params.PassThru = $true }
+    $_params.PassThru = $true
 
     $_process = Start-Process @_params
-    $_status = 'Installed'
-    if ($PassThru -and $_process) {
-      $_status = "ExitCode:$($_process.ExitCode)"
+    $_resultParams = @{ Target = $_target; Source = 'Win32Program'; Action = 'Install'; Duration = $_clock.Elapsed }
+    if ($PSBoundParameters.ContainsKey('RunId')) { $_resultParams.RunId = $RunId }
+    if ($NoWait) {
+      New-PackageLifecycleResult @_resultParams -Status 'Started' -Property @{ ProcessId = $_process.Id }
+      return
     }
-    New-PackageLifecycleResult -Target $_target -Source 'Win32Program' -Action 'Install' -Status $_status
+    $_exitCode = $_process.ExitCode
+    if ($null -eq $_exitCode) { throw 'Installer exited without an available exit code.' }
+    $_succeeded = $_exitCode -in $SuccessExitCodes
+    $_status = if ($PassThru) { "ExitCode:$_exitCode" } elseif ($_succeeded) { 'Installed' } else { 'Failed' }
+    if (-not $_succeeded) { $_resultParams.ErrorMessage = "Installer exited with code $_exitCode." }
+    if ([IO.Path]::GetExtension($_target) -eq '.msi') { $_resultParams.ErrorDomain = 'Msi' }
+    New-PackageLifecycleResult @_resultParams -Status $_status -ExitCode $_exitCode -RebootRequired ($_succeeded -and $_exitCode -in $RebootExitCodes) -Property @{ Succeeded = $_succeeded }
   }
   catch {
-    New-PackageLifecycleResult -Target $_target -Source 'Win32Program' -Action 'Install' -Status 'Failed' -ErrorMessage $_.Exception.Message
+    New-PackageLifecycleResult -Target $_target -Source 'Win32Program' -Action 'Install' -Status 'Failed' -ErrorRecord $_ -Duration $_clock.Elapsed @_runParams
+  }
+  finally {
+    $_clock.Stop()
+    if ($_process -is [System.IDisposable]) { $_process.Dispose() }
   }
 }
 
@@ -507,7 +587,7 @@ function Uninstall-Win32Program {
         New-PackageLifecycleResult -Target $_program.DisplayName -Source 'Win32Program' -Action 'Uninstall' -Status "ExitCode:$($_process.ExitCode)"
       }
       catch {
-        New-PackageLifecycleResult -Target $_program.DisplayName -Source 'Win32Program' -Action 'Uninstall' -Status 'Failed' -ErrorMessage $_.Exception.Message
+        New-PackageLifecycleResult -Target $_program.DisplayName -Source 'Win32Program' -Action 'Uninstall' -Status 'Failed' -ErrorRecord $_
       }
     }
   }
@@ -872,7 +952,7 @@ function Install-UPFAppxPackage {
     New-PackageLifecycleResult -Target $_path -Source 'UPFAppxPackage' -Action $_action -Status 'Completed'
   }
   catch {
-    New-PackageLifecycleResult -Target $_path -Source 'UPFAppxPackage' -Action $_action -Status 'Failed' -ErrorMessage $_.Exception.Message
+    New-PackageLifecycleResult -Target $_path -Source 'UPFAppxPackage' -Action $_action -Status 'Failed' -ErrorRecord $_
   }
 }
 
@@ -974,7 +1054,7 @@ function Repair-UPFAppxPackage {
       New-PackageLifecycleResult -Target $_package.PackageFullName -Source 'UPFAppxPackage' -Action 'Repair' -Status 'Completed'
     }
     catch {
-      New-PackageLifecycleResult -Target $_package.PackageFullName -Source 'UPFAppxPackage' -Action 'Repair' -Status 'Failed' -ErrorMessage $_.Exception.Message
+      New-PackageLifecycleResult -Target $_package.PackageFullName -Source 'UPFAppxPackage' -Action 'Repair' -Status 'Failed' -ErrorRecord $_
     }
   }
 }
@@ -1030,7 +1110,7 @@ function Reset-UPFAppxPackage {
       New-PackageLifecycleResult -Target $_package.PackageFullName -Source 'UPFAppxPackage' -Action 'Reset' -Status 'Completed'
     }
     catch {
-      New-PackageLifecycleResult -Target $_package.PackageFullName -Source 'UPFAppxPackage' -Action 'Reset' -Status 'Failed' -ErrorMessage $_.Exception.Message
+      New-PackageLifecycleResult -Target $_package.PackageFullName -Source 'UPFAppxPackage' -Action 'Reset' -Status 'Failed' -ErrorRecord $_
     }
   }
 }
@@ -1092,7 +1172,7 @@ function Uninstall-UPFAppxPackage {
         return New-PackageLifecycleResult -Target $_target -Source 'Provisioned' -Action 'Uninstall' -Status 'Removed'
       }
       catch {
-        return New-PackageLifecycleResult -Target $_target -Source 'Provisioned' -Action 'Uninstall' -Status 'Failed' -ErrorMessage $_.Exception.Message
+        return New-PackageLifecycleResult -Target $_target -Source 'Provisioned' -Action 'Uninstall' -Status 'Failed' -ErrorRecord $_
       }
     }
 
@@ -1111,7 +1191,7 @@ function Uninstall-UPFAppxPackage {
       New-PackageLifecycleResult -Target $_target -Source 'Installed' -Action 'Uninstall' -Status 'Removed'
     }
     catch {
-      New-PackageLifecycleResult -Target $_target -Source 'Installed' -Action 'Uninstall' -Status 'Failed' -ErrorMessage $_.Exception.Message
+      New-PackageLifecycleResult -Target $_target -Source 'Installed' -Action 'Uninstall' -Status 'Failed' -ErrorRecord $_
     }
   }
 }
@@ -1318,7 +1398,7 @@ function Install-Win32ProgramFromWinGet {
     New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Install' -Status 'Completed'
   }
   catch {
-    New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Install' -Status 'Failed' -ErrorMessage $_.Exception.Message
+    New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Install' -Status 'Failed' -ErrorRecord $_
   }
 }
 
@@ -1397,7 +1477,7 @@ function Update-Win32ProgramFromWinGet {
     New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Update' -Status 'Completed'
   }
   catch {
-    New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Update' -Status 'Failed' -ErrorMessage $_.Exception.Message
+    New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Update' -Status 'Failed' -ErrorRecord $_
   }
 }
 
@@ -1458,6 +1538,6 @@ function Uninstall-Win32ProgramFromWinGet {
     New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Uninstall' -Status 'Completed'
   }
   catch {
-    New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Uninstall' -Status 'Failed' -ErrorMessage $_.Exception.Message
+    New-PackageLifecycleResult -Target $_target -Source 'WinGet' -Action 'Uninstall' -Status 'Failed' -ErrorRecord $_
   }
 }

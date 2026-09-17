@@ -464,6 +464,20 @@ function Find-NewlyWrittenObject {
   }
 }
 
+function ConvertTo-PSFNativeArgumentString {
+  [CmdletBinding()]
+  [OutputType([string])]
+  param ([AllowEmptyCollection()][string[]]$ArgumentList)
+
+  # Windows C runtime quoting, including empty tokens and trailing backslashes.
+  $quoted = foreach ($arg in $ArgumentList) {
+    $token = [regex]::Replace([string]$arg, '(\\*)"', '$1$1\"')
+    $token = [regex]::Replace($token, '(\\+)$', '$1$1')
+    '"' + $token + '"'
+  }
+  return $quoted -join ' '
+}
+
 function Invoke-SafeProcess {
   <#
     .SYNOPSIS
@@ -476,7 +490,10 @@ function Invoke-SafeProcess {
 
       Designed for IR/forensics collection where external tools (reg.exe,
       wevtutil.exe, systeminfo.exe, etc.) need to be called safely and their
-      output captured without risking interactive prompts or policy blocks.
+      output captured for later review. Timeout and cancellation attempt to
+      terminate descendants as well as the child. Detached processes are not
+      guaranteed to be terminated. Programs must follow Windows command-line
+      quoting conventions on PowerShell 5.1.
     .PARAMETER FilePath
       Executable path (resolved from PATH when a bare name is supplied).
     .PARAMETER ArgumentList
@@ -487,6 +504,13 @@ function Invoke-SafeProcess {
     .PARAMETER PassThru
       Return stdout as a string. When combined with -OutputPath, output is
       both written to disk and returned.
+    .PARAMETER AsResult
+      Return ExitCode, StdOut, StdErr, Duration, TimedOut and Cancelled instead
+      of legacy combined text. Start and capture failures are terminating errors.
+    .PARAMETER TimeoutSeconds
+      Maximum execution time in seconds. Zero (the default) waits indefinitely.
+    .PARAMETER CancellationToken
+      Optional .NET cancellation token. Cancellation terminates the child.
     .EXAMPLE
       PS> Invoke-SafeProcess -FilePath 'whoami.exe' -ArgumentList @('/all') -OutputPath '.\whoami.txt'
     .EXAMPLE
@@ -499,7 +523,7 @@ function Invoke-SafeProcess {
   #>
 
   [CmdletBinding()]
-  [OutputType([string])]
+  [OutputType([string], [PSCustomObject])]
   param (
     [Parameter(Mandatory = $true)]
     [string]
@@ -515,16 +539,28 @@ function Invoke-SafeProcess {
 
     [Parameter(Mandatory = $false)]
     [switch]
-    $PassThru
+    $PassThru,
+
+    [switch]$AsResult,
+    [ValidateRange(0, 2147483647)]
+    [int]$TimeoutSeconds = 0,
+    [System.Threading.CancellationToken]$CancellationToken = [System.Threading.CancellationToken]::None
   )
 
+  $p = $null
+  $started = $false
+  $clock = [System.Diagnostics.Stopwatch]::StartNew()
   try {
+    $CancellationToken.ThrowIfCancellationRequested()
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $FilePath
-    if ($ArgumentList) {
+    if ($psi.PSObject.Properties['ArgumentList']) {
       foreach ($arg in $ArgumentList) {
-        [void]$psi.ArgumentList.Add($arg)
+        [void]$psi.ArgumentList.Add([string]$arg)
       }
+    }
+    else {
+      $psi.Arguments = ConvertTo-PSFNativeArgumentString -ArgumentList $ArgumentList
     }
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
@@ -534,9 +570,36 @@ function Invoke-SafeProcess {
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     [void]$p.Start()
-    $stdout = $p.StandardOutput.ReadToEnd()
-    $stderr = $p.StandardError.ReadToEnd()
-    $p.WaitForExit()
+    $started = $true
+    $stdoutTask = $p.StandardOutput.ReadToEndAsync()
+    $stderrTask = $p.StandardError.ReadToEndAsync()
+    $timedOut = $false
+    $cancelled = $false
+    while (-not $p.WaitForExit(50)) {
+      $timedOut = $TimeoutSeconds -gt 0 -and $clock.Elapsed.TotalSeconds -ge $TimeoutSeconds
+      $cancelled = $CancellationToken.IsCancellationRequested
+      if ($timedOut -or $cancelled) {
+        if ($p.GetType().GetMethod('Kill', [type[]]@([bool]))) {
+          $p.Kill($true)
+        }
+        else {
+          # Framework lacks Kill(entireProcessTree). taskkill receives only
+          # the process ID, never the user's command line.
+          & "$env:SystemRoot\System32\taskkill.exe" /PID $p.Id /T /F 2>$null | Out-Null
+          if (-not $p.HasExited) { $p.Kill() }
+        }
+        if (-not $p.WaitForExit(10000)) { throw 'Child process did not terminate within 10 seconds.' }
+        break
+      }
+    }
+    # A descendant can retain inherited pipe handles after the child exits.
+    # Bound the drain as well so this helper cannot wait forever on those handles.
+    if (-not [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]@($stdoutTask, $stderrTask), 10000)) {
+      throw 'Process output streams did not close within 10 seconds.'
+    }
+    $stdout = $stdoutTask.GetAwaiter().GetResult()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
+    $clock.Stop()
 
     $content = @()
     if (-not [string]::IsNullOrWhiteSpace($stdout)) { $content += $stdout }
@@ -551,12 +614,23 @@ function Invoke-SafeProcess {
       $result | Out-File -LiteralPath $OutputPath -Encoding UTF8
     }
 
+    if ($AsResult) {
+      return [PSCustomObject]@{
+        ExitCode  = $p.ExitCode
+        StdOut    = $stdout
+        StdErr    = $stderr
+        Duration  = $clock.Elapsed
+        TimedOut  = $timedOut
+        Cancelled = $cancelled
+      }
+    }
     if ($PassThru) {
       return $result
     }
   }
   catch {
-    $errorMessage = "ERROR running $FilePath $($ArgumentList -join ' '): $($_.Exception.Message)"
+    if ($AsResult) { throw }
+    $errorMessage = "ERROR running ${FilePath}: $($_.Exception.Message)"
     if ($OutputPath) {
       $errorMessage | Out-File -LiteralPath $OutputPath -Encoding UTF8
     }
@@ -564,6 +638,13 @@ function Invoke-SafeProcess {
       return $errorMessage
     }
     Write-Error $errorMessage
+  }
+  finally {
+    $clock.Stop()
+    if ($null -ne $p) {
+      if ($started -and -not $p.HasExited) { $p.Kill() }
+      $p.Dispose()
+    }
   }
 }
 

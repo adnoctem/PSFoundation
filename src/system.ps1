@@ -635,6 +635,107 @@ function Test-HostApplicability {
   return $true
 }
 
+function Get-HostPrerequisiteReport {
+  <#
+    .SYNOPSIS
+      Explains whether the host satisfies an operation's prerequisites.
+    .DESCRIPTION
+      Returns Applicable and a Checks array with expected/actual values, reason
+      codes and guidance. Reports every supplied constraint without installing
+      modules, starting services, or elevating the process. Discovery errors
+      become failed checks rather than hiding other prerequisite failures.
+    .PARAMETER MinBuild
+      Inclusive minimum Windows build.
+    .PARAMETER MaxBuild
+      Inclusive maximum Windows build.
+    .PARAMETER Edition
+      Accepted Windows edition identifiers.
+    .PARAMETER Architecture
+      Required OS architecture: x86, x64 or Arm64, including under emulation.
+    .PARAMETER RequireAdministrator
+      Require an elevated Windows identity.
+    .PARAMETER RequiredModules
+      Hashtable mapping exact module names to minimum versions.
+    .PARAMETER RequiredCommands
+      Exact command names that must resolve in the current session.
+    .PARAMETER RequiredServices
+      Hashtable mapping exact service names to required states (Running,
+      Stopped or Paused). A null or empty state checks only existence.
+    .EXAMPLE
+      PS> Get-HostPrerequisiteReport -MinBuild 22000 -RequireAdministrator -RequiredModules @{ Pester = '5.0.0' } -RequiredCommands 'winget.exe' -RequiredServices @{ wuauserv = 'Running' }
+  #>
+  [CmdletBinding()]
+  [OutputType([PSCustomObject])]
+  param (
+    [int]$MinBuild,
+    [int]$MaxBuild,
+    [string[]]$Edition,
+    [ValidateSet('x86', 'x64', 'Arm64')][string]$Architecture,
+    [switch]$RequireAdministrator,
+    [hashtable]$RequiredModules = @{},
+    [string[]]$RequiredCommands = @(),
+    [hashtable]$RequiredServices = @{}
+  )
+
+  if ($PSBoundParameters.ContainsKey('MinBuild') -and $PSBoundParameters.ContainsKey('MaxBuild') -and $MinBuild -gt $MaxBuild) {
+    throw 'MinBuild must not exceed MaxBuild.'
+  }
+  $specifications = [System.Collections.Generic.List[object]]::new()
+  if ($PSBoundParameters.ContainsKey('MinBuild')) {
+    $specifications.Add(@{ Check = 'MinBuild'; Target = 'Windows'; Expected = $MinBuild; Read = { Get-OSBuildNumber }; Test = { param($a, $e) $null -ne $a -and $a -ge $e }; Guidance = 'Use a Windows build at or above the required minimum.' })
+  }
+  if ($PSBoundParameters.ContainsKey('MaxBuild')) {
+    $specifications.Add(@{ Check = 'MaxBuild'; Target = 'Windows'; Expected = $MaxBuild; Read = { Get-OSBuildNumber }; Test = { param($a, $e) $null -ne $a -and $a -le $e }; Guidance = 'Use a supported Windows build within the specified range.' })
+  }
+  if ($Edition -and $Edition.Count -gt 0) {
+    $specifications.Add(@{ Check = 'Edition'; Target = 'Windows'; Expected = $Edition; Read = { Get-OSEdition }; Test = { param($a, $e) $a -in $e }; Guidance = 'Use one of the supported Windows editions.' })
+  }
+  if ($Architecture) {
+    $specifications.Add(@{
+        Check = 'Architecture'; Target = 'Windows'; Expected = $Architecture
+        Read = {
+          $native = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+          switch ($native) { 'AMD64' { 'x64' }; 'x86' { 'x86' }; 'ARM64' { 'Arm64' }; default { throw "Unknown OS architecture: $native" } }
+        }
+        Test = { param($a, $e) $a -eq $e }; Guidance = 'Use a host with the required OS architecture.'
+      })
+  }
+  if ($RequireAdministrator) {
+    $specifications.Add(@{ Check = 'Elevation'; Target = 'CurrentProcess'; Expected = $true; Read = { (Get-UserInfo).IsAdministrator }; Test = { param($a, $e) $a -eq $e }; Guidance = 'Run the operation from an elevated PowerShell session.' })
+  }
+  foreach ($name in @($RequiredModules.Keys | Sort-Object)) {
+    if ([string]::IsNullOrWhiteSpace($name) -or [WildcardPattern]::ContainsWildcardCharacters($name)) { throw 'RequiredModules needs exact module names.' }
+    $minimum = [version]$RequiredModules[$name]
+    if ($null -eq $minimum) { throw 'RequiredModules needs minimum version values.' }
+    $specifications.Add(@{ Check = 'Module'; Target = $name; Expected = $minimum; Read = { param($n) Get-Module -ListAvailable -Name $n | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty Version }; Test = { param($a, $e) $null -ne $a -and $a -ge $e }; Guidance = "Install $name at version $minimum or later in a module search path." })
+  }
+  foreach ($name in $RequiredCommands) {
+    if ([string]::IsNullOrWhiteSpace($name) -or [WildcardPattern]::ContainsWildcardCharacters($name)) { throw 'RequiredCommands needs exact command names.' }
+    $specifications.Add(@{ Check = 'Command'; Target = $name; Expected = 'Available'; Read = { param($n) if (Get-Command -Name $n -ErrorAction SilentlyContinue) { 'Available' } else { 'Missing' } }; Test = { param($a, $e) $a -eq $e }; Guidance = "Install or expose $name in this session or its PATH." })
+  }
+  foreach ($name in @($RequiredServices.Keys | Sort-Object)) {
+    if ([string]::IsNullOrWhiteSpace($name) -or [WildcardPattern]::ContainsWildcardCharacters($name)) { throw 'RequiredServices needs exact service names.' }
+    $state = $RequiredServices[$name]
+    if ($state -and $state -notin @('Running', 'Stopped', 'Paused')) { throw "Unsupported required service state: $state" }
+    $specifications.Add(@{ Check = 'Service'; Target = $name; Expected = $state; Read = { param($n) Get-Service -Name $n -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Status }; Test = { param($a, $e) $null -ne $a -and (-not $e -or [string]$a -eq $e) }; Guidance = "Check that service $name exists and is in the requested state." })
+  }
+  $checks = @(
+    foreach ($spec in $specifications) {
+      $actual = $null
+      $reason = 'Satisfied'
+      $guidance = $null
+      try {
+        $actual = & $spec.Read $spec.Target
+        $satisfied = [bool](& $spec.Test $actual $spec.Expected)
+        if (-not $satisfied) { $reason = 'RequirementNotMet'; $guidance = $spec.Guidance }
+      }
+      catch { $satisfied = $false; $reason = 'DiscoveryFailed'; $guidance = $_.Exception.Message }
+      [PSCustomObject]@{ Check = $spec.Check; Target = $spec.Target; Expected = $spec.Expected; Actual = $actual; Satisfied = $satisfied; Reason = $reason; Guidance = $guidance }
+    }
+  )
+  [PSCustomObject]@{ Applicable = @($checks | Where-Object { -not $_.Satisfied }).Count -eq 0; Checks = $checks }
+}
+
 # REVIEW-DATA: .NET Framework release-number lookup table. Point-in-time mapping —
 # update when Microsoft ships new .NET Framework releases. Authoritative table:
 # https://support.microsoft.com/en-us/help/318785

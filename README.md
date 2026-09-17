@@ -134,6 +134,64 @@ restart results still require following the restart guidance. A newer installed 
 belong to their respective domains. Multiple distinct recognized codes in message text produce no result; structured exception HRESULTs take
 precedence. The translator does not retry or suppress errors.
 
+### Native process results
+
+`Invoke-SafeProcess` preserves argument boundaries on Windows PowerShell 5.1 and PowerShell 7, and reads stdout and stderr concurrently. Use
+`-AsResult` for `ExitCode`, `StdOut`, `StdErr`, `Duration`, `TimedOut`, and `Cancelled`. Existing `-PassThru` combined text and
+`-OutputPath` behavior remain available; `-AsResult` takes precedence over `-PassThru`.
+
+```pwsh
+$result = Invoke-SafeProcess -FilePath 'whoami.exe' -ArgumentList '/all' -TimeoutSeconds 30 -AsResult
+$result | Select-Object ExitCode, Duration, TimedOut
+```
+
+`-CancellationToken` accepts a .NET cancellation token. Timeout and cancellation attempt to terminate the child and its descendants;
+detached processes may survive. Output capture has a separate ten-second drain limit for inherited pipe handles. Structured mode throws on
+start/capture failures and returns nonzero native exit codes as data. Output is buffered in memory, so use this for bounded command output.
+
+### Registry snapshots and restoration
+
+The existing `Export-RegistrySettingState` output stays compatible. Add `-Detailed` to capture version 1 snapshots containing explicit
+`Exists`, `KeyExists`, `Type`, `Preferred`, and `View` fields. Expandable strings retain their raw text. An explicit registry view remains
+attached to the snapshot across PowerShell architectures and JSON serialization.
+
+```pwsh
+$settings = @(@{ Path = 'HKCU:\Software\Example'; Name = 'Enabled' })
+$before = @(Export-RegistrySettingState -Settings $settings -Detailed)
+# Apply your selected registry changes, then capture the state they produced.
+$after = @(Export-RegistrySettingState -Settings $settings -Detailed)
+Compare-RegistrySettingState -Settings $before | Format-List
+Restore-RegistrySettingState -Settings $before -ExpectedState $after -WhatIf
+```
+
+Remove `-WhatIf` to restore selected values. `-ExpectedState` detects intervening edits and reports `Conflict`; without it, restoration
+overwrites current values. The checks are optimistic, not an atomic registry transaction. Keys and unrelated values are retained, including
+empty keys created while restoring values. Comparison also accepts desired settings with `Path`, `Name`, `Type`, and `Preferred`; use
+`Exists = $false` to request absence. Restoration requires detailed snapshots, avoiding ambiguity in legacy null values.
+
+### Prerequisites and operation outcomes
+
+```pwsh
+$report = Get-HostPrerequisiteReport -MinBuild 22000 -RequireAdministrator `
+  -RequiredModules @{ Pester = '5.0.0' } -RequiredCommands 'winget.exe' `
+  -RequiredServices @{ wuauserv = 'Running' }
+$report.Checks | Where-Object { -not $_.Satisfied } | Format-Table Check, Target, Actual, Expected, Guidance
+```
+
+The report includes `Applicable` and all requested checks. It discovers prerequisites without remediation; `Test-HostApplicability` still
+provides the original Boolean gate. Edition, OS architecture (including Arm64), module versions, commands, services, and elevation are
+supported.
+
+`New-OperationResult`, `Add-OperationResult`, and `New-PackageLifecycleResult` accept optional `Changed`, `AlreadyCompliant`, `Before`,
+`After`, `ExitCode`, `RebootRequired`, `Duration`, and `RunId`. Omitted fields remain absent; a missing `Changed` means unknown. Use the
+same `RunId` across a batch, or supply it to `Write-OperationResultLog` for entries without their own identifier. Package failures retain
+their original `ErrorRecord` and add `ErrorTranslation` when recognized.
+
+`Install-Win32Program` now checks exit codes even without `-PassThru`. Failed exits report `Failed`; success codes default to 0, 1641 and
+3010, with 1641/3010 also setting `RebootRequired`. Override `-SuccessExitCodes` and `-RebootExitCodes` for installers with other
+conventions. The legacy `-PassThru` status remains `ExitCode:n`, with a separate `Succeeded` flag. `-NoWait` now reports `Started` and
+`ProcessId`, because completion is not yet known. Callers that previously treated every result as `Installed` should check these outcomes.
+
 ### Self-elevation
 
 An entry-point script using `Request-AdministratorPrivilege` must declare a reserved `[switch]$Elevated` parameter and forward it through

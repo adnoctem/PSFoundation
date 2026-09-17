@@ -104,6 +104,8 @@ $publicFunctions = @(
   # registry.ps1
   'ConvertTo-RegistryProviderPath',
   'Resolve-RegistryPath',
+  'Compare-RegistrySettingState',
+  'Restore-RegistrySettingState',
   'Get-RegistryKey',
   'Set-RegistryKey',
   'Remove-RegistryKey',
@@ -163,6 +165,7 @@ $publicFunctions = @(
   'Get-SystemInfo',
   'Get-SystemPaths',
   'Test-HostApplicability',
+  'Get-HostPrerequisiteReport',
   'Get-DotNetVersion',
   'New-DriveMapping',
   'Remove-DriveMapping',

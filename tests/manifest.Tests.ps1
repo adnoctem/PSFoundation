@@ -22,7 +22,10 @@ Describe 'Module manifest exports' {
   It 'exports the new public command <Name>' -ForEach @(
     @{ Name = 'Get-ErrorTranslation' },
     @{ Name = 'ConvertFrom-RegistryPolicy' },
-    @{ Name = 'ConvertTo-RegistryPolicy' }
+    @{ Name = 'ConvertTo-RegistryPolicy' },
+    @{ Name = 'Compare-RegistrySettingState' },
+    @{ Name = 'Restore-RegistrySettingState' },
+    @{ Name = 'Get-HostPrerequisiteReport' }
   ) {
     Get-Command -Name $Name -Module PSFoundation -ErrorAction Stop | Should -Not -BeNullOrEmpty
   }

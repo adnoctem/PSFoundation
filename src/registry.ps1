@@ -102,6 +102,8 @@ function Resolve-RegistryPath {
       PS> Resolve-RegistryPath -Path 'HKLM:\Software\Microsoft'
     .EXAMPLE
       PS> Resolve-RegistryPath -Path 'HKCU:\Control Panel\Desktop' -Writable
+    .PARAMETER View
+      Registry view to open. Default follows the current process architecture.
     .LINK
       https://github.com/adnoctem/winkit/lib/registry.ps1
     .NOTES
@@ -120,7 +122,9 @@ function Resolve-RegistryPath {
     # Open the key with write access
     [Parameter(Mandatory = $false)]
     [switch]
-    $Writable = $false
+    $Writable = $false,
+
+    [Microsoft.Win32.RegistryView]$View = [Microsoft.Win32.RegistryView]::Default
   )
 
   # Short hive name -> .NET RegistryHive (kept here for this function only;
@@ -162,10 +166,11 @@ function Resolve-RegistryPath {
 
   try {
     if ([string]::IsNullOrEmpty($_subKey)) {
-      return [Microsoft.Win32.RegistryKey]::OpenBaseKey($_hive, [Microsoft.Win32.RegistryView]::Default)
+      return [Microsoft.Win32.RegistryKey]::OpenBaseKey($_hive, $View)
     }
-    $_root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($_hive, [Microsoft.Win32.RegistryView]::Default)
-    return $_root.OpenSubKey($_subKey, $Writable)
+    $_root = [Microsoft.Win32.RegistryKey]::OpenBaseKey($_hive, $View)
+    try { return $_root.OpenSubKey($_subKey, $Writable) }
+    finally { $_root.Dispose() }
   }
   catch [System.UnauthorizedAccessException] {
     Write-Error "Access denied opening registry key: '$Path'"
@@ -174,6 +179,243 @@ function Resolve-RegistryPath {
   catch {
     Write-Error "Failed to resolve registry path '$Path': $_"
     return $null
+  }
+}
+
+function Get-PSFRegistryValueState {
+  [CmdletBinding()]
+  [OutputType([PSCustomObject])]
+  param (
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Name,
+    [Microsoft.Win32.RegistryView]$View = [Microsoft.Win32.RegistryView]::Default
+  )
+
+  $canonical = ConvertTo-RegistryProviderPath -Path $Path -ErrorAction Stop
+  if ($View -eq 'Default') {
+    $View = if ([Environment]::Is64BitProcess) { 'Registry64' } else { 'Registry32' }
+  }
+  $key = Resolve-RegistryPath -Path $canonical -View $View -ErrorAction Stop
+  try {
+    $exists = $null -ne $key -and $key.GetValueNames() -contains $Name
+    $type = $null
+    $value = $null
+    if ($exists) {
+      $type = $key.GetValueKind($Name).ToString()
+      $value = $key.GetValue($Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    }
+    [PSCustomObject]@{
+      SnapshotVersion = 1
+      Path            = $canonical
+      Name            = $Name
+      View            = $View.ToString()
+      KeyExists       = $null -ne $key
+      Exists          = $exists
+      Type            = $type
+      Preferred       = $value
+    }
+  }
+  finally { if ($null -ne $key) { $key.Dispose() } }
+}
+
+function ConvertTo-PSFRegistryState {
+  [CmdletBinding()]
+  [OutputType([PSCustomObject])]
+  param ([Parameter(Mandatory = $true)][object]$Setting)
+
+  $fields = @{}
+  if ($Setting -is [System.Collections.IDictionary]) {
+    foreach ($name in $Setting.Keys) { $fields[$name] = $Setting[$name] }
+  }
+  else {
+    foreach ($property in $Setting.PSObject.Properties) { $fields[$property.Name] = $property.Value }
+  }
+  if (-not $fields.ContainsKey('Path') -or -not $fields.ContainsKey('Name')) { throw 'Settings require Path and Name.' }
+  if ($fields.ContainsKey('SnapshotVersion') -and $fields.SnapshotVersion -ne 1) { throw 'Unsupported registry snapshot version.' }
+  if ($fields.ContainsKey('Exists') -and $fields.Exists -isnot [bool]) { throw 'Exists must be a Boolean.' }
+  $exists = if ($fields.ContainsKey('Exists')) { $fields.Exists } else { $true }
+  $value = $fields.Preferred
+  $kind = $null
+  if ($exists) {
+    if (-not $fields.ContainsKey('Preferred') -or $null -eq $value -or -not $fields.Type) {
+      throw 'Existing values require Type and a non-null Preferred value. Use Exists = $false to represent absence.'
+    }
+    $kind = [Microsoft.Win32.RegistryValueKind]$fields.Type
+    switch ($kind.ToString()) {
+      'String' { $value = [string]$value }
+      'ExpandString' { $value = [string]$value }
+      'MultiString' { $value = [string[]]$value }
+      'Binary' { $value = [byte[]]$value }
+      'None' { $value = [byte[]]$value }
+      'DWord' { $value = [int]$value }
+      'QWord' { $value = [long]$value }
+      default { throw "Unsupported registry value type: $kind" }
+    }
+  }
+  $view = if ($fields.ContainsKey('View')) { [Microsoft.Win32.RegistryView]$fields.View } else { [Microsoft.Win32.RegistryView]::Default }
+  if ($view -eq 'Default') { $view = if ([Environment]::Is64BitProcess) { 'Registry64' } else { 'Registry32' } }
+  [PSCustomObject]@{
+    SnapshotVersion = 1
+    Path            = ConvertTo-RegistryProviderPath -Path $fields.Path -ErrorAction Stop
+    Name            = [string]$fields.Name
+    View            = $view.ToString()
+    Exists          = [bool]$exists
+    Type            = if ($null -ne $kind) { $kind.ToString() } else { $null }
+    Preferred       = $value
+  }
+}
+
+function Test-PSFRegistryStateEqual {
+  [CmdletBinding()]
+  [OutputType([bool])]
+  param ([object]$Left, [object]$Right)
+
+  if ($Left.Exists -ne $Right.Exists) { return $false }
+  if (-not $Left.Exists) { return $true }
+  if ($Left.Type -ne $Right.Type) { return $false }
+  $leftValues = @($Left.Preferred)
+  $rightValues = @($Right.Preferred)
+  if ($leftValues.Count -ne $rightValues.Count) { return $false }
+  for ($i = 0; $i -lt $leftValues.Count; $i++) {
+    if ($leftValues[$i] -cne $rightValues[$i]) { return $false }
+  }
+  return $true
+}
+
+function Compare-RegistrySettingState {
+  <#
+    .SYNOPSIS
+      Previews differences between selected registry values and desired state.
+    .DESCRIPTION
+      Returns Before, After, Changed and Action for each setting without writes.
+      Comparison includes existence, value type and ordered, case-sensitive data.
+      Only selected values are compared; keys and unrelated values are untouched.
+    .PARAMETER Settings
+      Detailed snapshots or desired settings with Path, Name, Type and Preferred.
+      Exists = $false requests removal. View defaults to the process view.
+    .EXAMPLE
+      PS> Compare-RegistrySettingState -Settings $snapshot
+  #>
+  [CmdletBinding()]
+  [OutputType([PSCustomObject])]
+  param ([Parameter(Mandatory = $true, ValueFromPipeline = $true)][object[]]$Settings)
+
+  process {
+    foreach ($setting in $Settings) {
+      $desired = ConvertTo-PSFRegistryState -Setting $setting
+      $current = Get-PSFRegistryValueState -Path $desired.Path -Name $desired.Name -View $desired.View
+      $changed = -not (Test-PSFRegistryStateEqual -Left $current -Right $desired)
+      [PSCustomObject]@{
+        Path    = $desired.Path
+        Name    = $desired.Name
+        View    = $desired.View
+        Before  = $current
+        After   = $desired
+        Changed = $changed
+        Action  = if (-not $changed) { 'None' } elseif ($desired.Exists) { 'SetValue' } else { 'RemoveValue' }
+      }
+    }
+  }
+}
+
+function Restore-RegistrySettingState {
+  <#
+    .SYNOPSIS
+      Restores selected registry values from a detailed snapshot.
+    .DESCRIPTION
+      Restores original types, raw values and absence with ShouldProcess support.
+      Does not remove keys or unrelated values. ExpectedState enables optimistic
+      conflict detection: capture it after your changes, then supply it during
+      restore. Missing or mismatched expected entries produce Conflict results.
+      Without ExpectedState, restoration explicitly overwrites current values.
+      The final check narrows races but is not an atomic registry transaction.
+    .PARAMETER Settings
+      Version 1 snapshots produced by Export-RegistrySettingState -Detailed.
+    .PARAMETER ExpectedState
+      Detailed snapshots of the state expected immediately before restoration.
+    .EXAMPLE
+      PS> Restore-RegistrySettingState -Settings $before -ExpectedState $after -WhatIf
+  #>
+  [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+  [OutputType([PSCustomObject])]
+  param (
+    [Parameter(Mandatory = $true, ValueFromPipeline = $true)][object[]]$Settings,
+    [AllowEmptyCollection()][object[]]$ExpectedState
+  )
+
+  begin {
+    $expected = @{}
+    foreach ($entry in $ExpectedState) {
+      if ($entry.SnapshotVersion -ne 1) { throw 'ExpectedState requires detailed version 1 snapshots.' }
+      $state = ConvertTo-PSFRegistryState -Setting $entry
+      $id = @($state.Path, $state.Name, $state.View) | ConvertTo-Json -Compress
+      if ($expected.ContainsKey($id)) { throw 'ExpectedState contains duplicate registry values.' }
+      $expected[$id] = $state
+    }
+  }
+  process {
+    foreach ($setting in $Settings) {
+      if ($setting.SnapshotVersion -ne 1) { throw 'Restoration requires detailed version 1 snapshots.' }
+      $diff = Compare-RegistrySettingState -Settings $setting
+      $params = @{
+        Target           = "$($diff.Path)\$($diff.Name)"
+        Source           = 'Registry'
+        Action           = $diff.Action
+        Status           = 'AlreadyCompliant'
+        Changed          = $false
+        AlreadyCompliant = -not $diff.Changed
+        Before           = $diff.Before
+        After            = $diff.Before
+      }
+      if (-not $diff.Changed) { New-OperationResult @params; continue }
+      $id = @($diff.Path, $diff.Name, $diff.View) | ConvertTo-Json -Compress
+      if ($PSBoundParameters.ContainsKey('ExpectedState') -and
+        (-not $expected.ContainsKey($id) -or -not (Test-PSFRegistryStateEqual -Left $diff.Before -Right $expected[$id]))) {
+        $params.Status = 'Conflict'
+        New-OperationResult @params
+        continue
+      }
+      if (-not $PSCmdlet.ShouldProcess("$($params.Target) [$($diff.View)]", $diff.Action)) {
+        $params.Status = 'Skipped'
+        $params.SkippedReason = 'WhatIf'
+        New-OperationResult @params
+        continue
+      }
+      $key = $null
+      $root = $null
+      try {
+        $latest = Get-PSFRegistryValueState -Path $diff.Path -Name $diff.Name -View $diff.View
+        if (-not (Test-PSFRegistryStateEqual -Left $latest -Right $diff.Before)) {
+          $params.Status = 'Conflict'
+          $params.After = $latest
+          New-OperationResult @params
+          continue
+        }
+        $key = Resolve-RegistryPath -Path $diff.Path -View $diff.View -Writable -ErrorAction Stop
+        if ($diff.After.Exists) {
+          if ($null -eq $key) {
+            $parts = $diff.Path -split '\\', 2
+            $root = Resolve-RegistryPath -Path $parts[0] -View $diff.View -Writable -ErrorAction Stop
+            $key = $root.CreateSubKey($parts[1])
+          }
+          $key.SetValue($diff.Name, $diff.After.Preferred, [Microsoft.Win32.RegistryValueKind]$diff.After.Type)
+        }
+        elseif ($null -ne $key) { $key.DeleteValue($diff.Name, $false) }
+        $params.After = Get-PSFRegistryValueState -Path $diff.Path -Name $diff.Name -View $diff.View
+        $params.Changed = -not (Test-PSFRegistryStateEqual -Left $diff.Before -Right $params.After)
+        if (-not (Test-PSFRegistryStateEqual -Left $params.After -Right $diff.After)) { throw 'Registry verification failed after restoration.' }
+        $params.Status = 'Restored'
+      }
+      catch {
+        $params.Status = 'Failed'
+        $params.ErrorMessage = $_.Exception.Message
+      }
+      finally {
+        if ($null -ne $key) { $key.Dispose() }
+        if ($null -ne $root) { $root.Dispose() }
+      }
+      New-OperationResult @params
+    }
   }
 }
 

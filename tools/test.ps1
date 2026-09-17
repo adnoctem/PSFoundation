@@ -6,11 +6,18 @@
 
 .DESCRIPTION
   Invokes Pester against test files in the repository tests directory. By
-  default all test files are executed. The script exits with the number of
-  failed tests as its exit code, making it suitable for CI usage.
+  default all test files are executed except Integration-tagged tests. Exits
+  with 1 for failed tests, failed containers or empty discovery, otherwise 0.
 
 .PARAMETER Path
   Path to test files or directory. Defaults to the repository tests directory.
+.PARAMETER Coverage
+  Collect informational source coverage in JaCoCo format, with no percentage gate.
+.PARAMETER OutputDirectory
+  Write NUnit test results and optional coverage here. Coverage defaults this to
+  build/test-results when no directory is supplied.
+.PARAMETER IncludeIntegration
+  Include tests tagged Integration. These may require privileges or change state.
 
 .EXAMPLE
   PS> ./test.ps1
@@ -30,7 +37,10 @@
 
 [CmdletBinding()]
 param (
-  [string[]]$Path = @(Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'tests')
+  [string[]]$Path = @(Join-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -ChildPath 'tests'),
+  [switch]$Coverage,
+  [string]$OutputDirectory,
+  [switch]$IncludeIntegration
 )
 
 $ErrorActionPreference = 'Stop'
@@ -69,6 +79,29 @@ $config = [PesterConfiguration]@{
   }
 }
 
+if (-not $IncludeIntegration) { $config.Filter.ExcludeTag = @('Integration') }
+if ($Coverage -and -not $OutputDirectory) {
+  $OutputDirectory = Join-Path (Split-Path $PSScriptRoot -Parent) 'build/test-results'
+}
+if ($OutputDirectory) {
+  $OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
+  $null = [IO.Directory]::CreateDirectory($OutputDirectory)
+  $config.TestResult.Enabled = $true
+  $config.TestResult.OutputFormat = 'NUnitXml'
+  $config.TestResult.OutputPath = Join-Path $OutputDirectory 'tests.xml'
+}
+if ($Coverage) {
+  # Detailed verbosity dumps every uncovered command; the XML retains that
+  # information while Normal keeps the CI log useful.
+  $config.Output.Verbosity = 'Normal'
+  $config.CodeCoverage.Enabled = $true
+  $config.CodeCoverage.Path = @(Join-Path (Split-Path $PSScriptRoot -Parent) 'src/*.ps1')
+  $config.CodeCoverage.OutputFormat = 'JaCoCo'
+  $config.CodeCoverage.OutputPath = Join-Path $OutputDirectory 'coverage.xml'
+  $config.CodeCoverage.CoveragePercentTarget = 0
+}
+
 $result = Invoke-Pester -Configuration $config
 
-exit $result.FailedCount
+if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.TotalCount -eq 0) { exit 1 }
+exit 0

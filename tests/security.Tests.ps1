@@ -11,6 +11,83 @@ BeforeAll {
   $config = Import-SecurityEventConfiguration -Path (Join-Path $PSScriptRoot '../src/security.psd1') -Force
 }
 
+Describe 'Invoke-SafeProcess' {
+  BeforeAll {
+    $nativeFixture = Join-Path $TestDrive 'NativeProcess.exe'
+    $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+    $fixtureSource = Join-Path $PSScriptRoot 'fixtures\process\NativeProcess.cs'
+    $compilerOutput = & $compiler /nologo /target:exe "/out:$nativeFixture" $fixtureSource
+    if ($LASTEXITCODE -ne 0) { throw "Native process fixture compilation failed: $compilerOutput" }
+  }
+
+  It 'preserves empty, quoted, Unicode and trailing-backslash arguments' {
+    $values = @('', 'two words', 'quote"inside', 'C:\with space\', 'slash\"quote', 'Grüße', '& | ; $value')
+    $result = Invoke-SafeProcess -FilePath $nativeFixture -ArgumentList (@('arguments') + $values) -AsResult
+    $actual = @($result.StdOut -split '\r?\n' | Where-Object { $_.StartsWith('ARG:') } | ForEach-Object {
+        [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($_.Substring(4)))
+      })
+    $actual.Count | Should -Be $values.Count
+    for ($i = 0; $i -lt $values.Count; $i++) { $actual[$i] | Should -BeExactly $values[$i] }
+  }
+
+  It 'drains both full output streams and retains a nonzero exit code' {
+    $result = Invoke-SafeProcess -FilePath $nativeFixture -ArgumentList 'streams' -AsResult -TimeoutSeconds 15
+    $result.ExitCode | Should -Be 17
+    $result.StdOut.Length | Should -Be 524288
+    $result.StdErr.Length | Should -Be 524288
+    $result.TimedOut | Should -BeFalse
+    $result.Duration.TotalMilliseconds | Should -BeGreaterThan 0
+  }
+
+  It 'preserves legacy combined text and file output' {
+    $path = Join-Path $TestDrive 'process.txt'
+    $result = Invoke-SafeProcess -FilePath $nativeFixture -ArgumentList 'arguments', 'hello' -PassThru -OutputPath $path
+    $result | Should -BeOfType [string]
+    $result | Should -Match 'EXITCODE: 0'
+    (Get-Content -LiteralPath $path -Raw).Trim() | Should -Be $result.Trim()
+  }
+
+  It 'terminates the child on timeout' {
+    $result = Invoke-SafeProcess -FilePath $nativeFixture -ArgumentList 'wait' -AsResult -TimeoutSeconds 1
+    $result.TimedOut | Should -BeTrue
+    $result.Cancelled | Should -BeFalse
+    Get-Process -Id ([int]$result.StdOut.Trim()) -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    $result.Duration.TotalSeconds | Should -BeLessThan 15
+  }
+
+  It 'terminates the child when cancellation is requested' {
+    $cancel = [Threading.CancellationTokenSource]::new()
+    try {
+      $cancel.CancelAfter(1000)
+      $result = Invoke-SafeProcess -FilePath $nativeFixture -ArgumentList 'wait' -AsResult -CancellationToken $cancel.Token
+      $result.Cancelled | Should -BeTrue
+      Get-Process -Id ([int]$result.StdOut.Trim()) -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    }
+    finally { $cancel.Dispose() }
+  }
+
+  It 'terminates descendants on timeout as well as the direct child' {
+    $result = Invoke-SafeProcess -FilePath $nativeFixture -ArgumentList 'tree' -AsResult -TimeoutSeconds 2
+    $result.TimedOut | Should -BeTrue
+    $ids = @($result.StdOut.Trim() -split '\r?\n')
+    $ids.Count | Should -Be 2
+    foreach ($childId in $ids) { Get-Process -Id ([int]$childId) -ErrorAction SilentlyContinue | Should -BeNullOrEmpty }
+  }
+
+  It 'does not start a process for an already cancelled token' {
+    $cancel = [Threading.CancellationTokenSource]::new()
+    try {
+      $cancel.Cancel()
+      { Invoke-SafeProcess -FilePath $nativeFixture -ArgumentList 'wait' -AsResult -CancellationToken $cancel.Token } | Should -Throw '*canceled*'
+    }
+    finally { $cancel.Dispose() }
+  }
+
+  It 'reports start failures as terminating errors in structured mode' {
+    { Invoke-SafeProcess -FilePath (Join-Path $TestDrive 'missing.exe') -AsResult } | Should -Throw
+  }
+}
+
 Describe 'Add-DefenderExclusion' {
   It 'adds a Defender path exclusion' {
     Mock Add-MpPreference { }

@@ -49,6 +49,20 @@ function Test-PSWindowsUpdateAvailable {
   return $null -ne (Get-Module -ListAvailable -Name PSWindowsUpdate -ErrorAction SilentlyContinue)
 }
 
+function Get-PSFWindowsUpdateId {
+  [CmdletBinding()]
+  [OutputType([guid])]
+  param ([Parameter(Mandatory = $true)][psobject]$Update)
+
+  $id = $null
+  if ($Update.PSObject.Properties['Identity'] -and $Update.Identity) { $id = $Update.Identity.UpdateID }
+  elseif ($Update.PSObject.Properties['UpdateID']) { $id = $Update.UpdateID }
+  if (-not $id -or [guid]$id -eq [guid]::Empty) {
+    throw 'Selected update is missing its UpdateID; refusing an unfiltered update operation.'
+  }
+  return [guid]$id
+}
+
 # ---- Get-WindowsUpdate ---------------------------------------------------------
 function Get-WindowsUpdate {
   <#
@@ -104,17 +118,21 @@ function Get-WindowsUpdate {
     return
   }
 
-  Import-Module PSWindowsUpdate -Force -ErrorAction Stop
+  Import-Module PSWindowsUpdate -Prefix PSFProvider -Force -ErrorAction Stop
 
   $_params = @{ ErrorAction = 'Stop' }
   if ($PSBoundParameters.ContainsKey('KBArticleID')) { $_params['KBArticleID'] = $KBArticleID }
   if ($PSBoundParameters.ContainsKey('Title')) { $_params['Title'] = $Title }
 
   try {
-    $_updates = Get-WUList @_params
+    $_updates = PSWindowsUpdate\Get-PSFProviderWindowsUpdate @_params
 
     if ($Category) {
-      $_updates = $_updates | Where-Object { $_.Categories -and ($Category | Where-Object { $_ -in $_.Categories.Name }) }
+      $_updates = $_updates | Where-Object {
+        if (-not $_.PSObject.Properties['Categories'] -or -not $_.Categories) { return $false }
+        $_categoryNames = $_.Categories.Name
+        @($Category | Where-Object { $_ -in $_categoryNames }).Count -gt 0
+      }
     }
 
     return $_updates
@@ -170,7 +188,7 @@ function Install-WindowsUpdate {
       License: MIT
   #>
 
-  [CmdletBinding(DefaultParameterSetName = 'Pipeline')]
+  [CmdletBinding(DefaultParameterSetName = 'Pipeline', SupportsShouldProcess = $true)]
   [OutputType([PSCustomObject[]])]
   param (
     [Parameter(Mandatory = $true, ValueFromPipeline = $true, ParameterSetName = 'Pipeline')]
@@ -196,10 +214,9 @@ function Install-WindowsUpdate {
 
   begin {
     if (-not (Test-PSWindowsUpdateAvailable)) {
-      Write-Error 'PSWindowsUpdate module is not installed.'
-      return
+      throw 'PSWindowsUpdate module is not installed.'
     }
-    Import-Module PSWindowsUpdate -Force -ErrorAction Stop
+    Import-Module PSWindowsUpdate -Prefix PSFProvider -Force -ErrorAction Stop
     $_results = New-Object System.Collections.ArrayList
     $_updateObjects = New-Object System.Collections.ArrayList
     $null = $PSBoundParameters['AcceptAll']
@@ -220,7 +237,7 @@ function Install-WindowsUpdate {
         Write-Error "No update found for KB: $KBArticleID"
         return
       }
-      [void]$_updateObjects.Add($_found)
+      foreach ($_u in $_found) { [void]$_updateObjects.Add($_u) }
     }
 
     if ($PSCmdlet.ParameterSetName -eq 'All') {
@@ -238,7 +255,11 @@ function Install-WindowsUpdate {
     }
 
     try {
-      $installResult = Install-WUUpdates -Updates $_updateObjects -AcceptAll -AutoReboot:$AutoReboot -IgnoreReboot:$IgnoreReboot -ErrorAction Stop
+      $_ids = @($_updateObjects | ForEach-Object {
+          Get-PSFWindowsUpdateId -Update $_
+        } | Select-Object -Unique)
+      if (-not $PSCmdlet.ShouldProcess(($_ids -join ', '), 'Install Windows updates')) { return }
+      $installResult = PSWindowsUpdate\Get-PSFProviderWindowsUpdate -UpdateID $_ids -Install -AcceptAll -AutoReboot:$AutoReboot -IgnoreReboot:$IgnoreReboot -Confirm:$false -ErrorAction Stop
 
       foreach ($_item in $installResult) {
         $obj = [PSCustomObject]@{
@@ -302,10 +323,9 @@ function Hide-WindowsUpdate {
 
   begin {
     if (-not (Test-PSWindowsUpdateAvailable)) {
-      Write-Error 'PSWindowsUpdate module is not installed.'
-      return
+      throw 'PSWindowsUpdate module is not installed.'
     }
-    Import-Module PSWindowsUpdate -Force -ErrorAction Stop
+    Import-Module PSWindowsUpdate -Prefix PSFProvider -Force -ErrorAction Stop
     $_updates = New-Object System.Collections.ArrayList
   }
 
@@ -321,7 +341,7 @@ function Hide-WindowsUpdate {
     if ($PSCmdlet.ParameterSetName -eq 'KB') {
       $_found = Get-WindowsUpdate -KBArticleID $KBArticleID
       if (-not $_found) { return }
-      [void]$_updates.Add($_found)
+      foreach ($_u in $_found) { [void]$_updates.Add($_u) }
     }
 
     if ($_updates.Count -eq 0) { return }
@@ -331,7 +351,8 @@ function Hide-WindowsUpdate {
       if (-not $PSCmdlet.ShouldProcess($_label, 'Hide update')) { continue }
 
       try {
-        $null = Hide-WUUpdate -Update $_u -Confirm:$false -ErrorAction Stop
+        $_id = Get-PSFWindowsUpdateId -Update $_u
+        $null = PSWindowsUpdate\Get-PSFProviderWindowsUpdate -UpdateID $_id -Hide -Confirm:$false -ErrorAction Stop
         Write-Verbose "Hidden: $_label"
       }
       catch {
@@ -387,14 +408,14 @@ function Get-WindowsUpdateHistory {
     return
   }
 
-  Import-Module PSWindowsUpdate -Force -ErrorAction Stop
+  Import-Module PSWindowsUpdate -Prefix PSFProvider -Force -ErrorAction Stop
 
   $_params = @{ ErrorAction = 'Stop' }
   if ($PSBoundParameters.ContainsKey('Last')) { $_params['Last'] = $Last }
-  if ($PSBoundParameters.ContainsKey('KBArticleID')) { $_params['KBArticleID'] = $KBArticleID }
-
   try {
-    return Get-WUHistory @_params
+    $_history = PSWindowsUpdate\Get-PSFProviderWUHistory @_params
+    if ($KBArticleID) { $_history = $_history | Where-Object { $_.Title -match "\b$([regex]::Escape($KBArticleID))\b" } }
+    return $_history
   }
   catch {
     Write-Error "Failed to get update history: $_"
@@ -438,7 +459,7 @@ function Uninstall-WindowsUpdate {
     return
   }
 
-  Import-Module PSWindowsUpdate -Force -ErrorAction Stop
+  Import-Module PSWindowsUpdate -Prefix PSFProvider -Force -ErrorAction Stop
 
   $_history = Get-WindowsUpdateHistory -KBArticleID $KBArticleID
   if (-not $_history) {
@@ -451,7 +472,7 @@ function Uninstall-WindowsUpdate {
   }
 
   try {
-    Remove-WUUpdate -KBArticleID $KBArticleID -Confirm:$false -ErrorAction Stop
+    PSWindowsUpdate\Remove-PSFProviderWindowsUpdate -KBArticleID $KBArticleID -Confirm:$false -ErrorAction Stop
     Write-Verbose "Uninstalled: $KBArticleID"
   }
   catch {
@@ -484,10 +505,10 @@ function Test-WindowsUpdateRebootRequired {
     return $false
   }
 
-  Import-Module PSWindowsUpdate -Force -ErrorAction Stop
+  Import-Module PSWindowsUpdate -Prefix PSFProvider -Force -ErrorAction Stop
 
   try {
-    $status = Get-WURebootStatus -ErrorAction Stop
+    $status = PSWindowsUpdate\Get-PSFProviderWURebootStatus -ErrorAction Stop
     return $status.RebootRequired
   }
   catch {
@@ -525,10 +546,10 @@ function Get-WindowsUpdateConfiguration {
     return
   }
 
-  Import-Module PSWindowsUpdate -Force -ErrorAction Stop
+  Import-Module PSWindowsUpdate -Prefix PSFProvider -Force -ErrorAction Stop
 
   try {
-    return Get-WUSettings -ErrorAction Stop
+    return PSWindowsUpdate\Get-PSFProviderWUSettings -ErrorAction Stop
   }
   catch {
     Write-Error "Failed to get Windows Update configuration: $_"
@@ -646,7 +667,7 @@ function Install-MSStoreUpdate {
       License: MIT
   #>
 
-  [CmdletBinding(DefaultParameterSetName = 'Pipeline')]
+  [CmdletBinding(DefaultParameterSetName = 'Pipeline', SupportsShouldProcess = $true)]
   [OutputType([PSCustomObject[]])]
   param (
     [Parameter(Mandatory = $true, ValueFromPipeline = $true, ParameterSetName = 'Pipeline')]
@@ -700,13 +721,15 @@ function Install-MSStoreUpdate {
       return
     }
 
-    $mgr = _getAppInstallManager
+    $mgr = $null
 
     foreach ($_item in $_items) {
       $_pfn = $_item.PackageFamilyName
+      if (-not $PSCmdlet.ShouldProcess($_pfn, 'Install Microsoft Store update')) { continue }
       Write-Log -Message "  Installing: $_pfn" -Color Yellow
 
       try {
+        if ($null -eq $mgr) { $mgr = _getAppInstallManager }
         $updateOp = $mgr.UpdateAppByPackageFamilyNameAsync($_pfn)
         $updateResult = _awaitWinRt $updateOp ([Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallItem])
 

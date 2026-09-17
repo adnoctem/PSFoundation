@@ -154,8 +154,26 @@ Run a specific test file:
 .\PSFoundation.ps1 test -Path .\tests\registry.Tests.ps1
 ```
 
-Tests require Pester 5.0 or higher, which is installed automatically with `.\PSFoundation.ps1 init`. The test runner exits with the number
-of failed tests as its exit code, making it suitable for CI pipelines.
+Tests require Pester 5.0 or higher, which is installed automatically with `.\PSFoundation.ps1 init`. The runner exits with 1 for failed
+tests, failed test containers, or no discovered tests; successful runs exit with 0.
+
+Collect an informational coverage baseline and NUnit test results:
+
+```pwsh
+.\PSFoundation.ps1 test -Coverage -OutputDirectory build/test-results
+```
+
+Coverage measures `src/*.ps1` and writes `coverage.xml` in JaCoCo format alongside `tests.xml`. There is no coverage percentage gate.
+`-OutputDirectory` alone writes test results without collecting coverage; `-Coverage` defaults to `build/test-results` when no directory is
+given. CI uploads these reports for every OS and PowerShell matrix entry, including failed runs that produced reports.
+
+Initial baseline (2026-09-16, Pester 6.0.1): 361 passing tests and three existing skips on each engine. Source command coverage is 49.24% on
+Windows PowerShell 5.1 and 49.48% on PowerShell 7. This is a measurement to guide further tests, not a required percentage.
+
+Tests tagged `Integration` are excluded unless `-IncludeIntegration` is supplied. Use that tag for new privileged or environment-dependent
+integration tests; run them only on a prepared disposable host. The existing explicitly skipped device/firewall tests remain skipped. The
+ordinary suite uses mocked installer/update providers, temporary files, and disposable current-user registry values. Native process tests
+compile a harmless fixture with the Windows .NET Framework C# compiler and exercise real argument handling and process cleanup.
 
 ### Publishing a Release
 

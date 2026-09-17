@@ -40,6 +40,22 @@ function New-OperationResult {
     .PARAMETER Property
       Optional hashtable of additional properties appended after the common
       fields. Existing common fields are not overwritten.
+    .PARAMETER Changed
+      Whether the operation is known to have changed state. Omit when unknown.
+    .PARAMETER AlreadyCompliant
+      Whether the requested state was already satisfied before the operation.
+    .PARAMETER Before
+      Optional captured state before the operation, including an explicit null.
+    .PARAMETER After
+      Optional observed state after the operation, including an explicit null.
+    .PARAMETER ExitCode
+      Native process exit code. Does not replace the existing Status field.
+    .PARAMETER RebootRequired
+      Whether the operation reports that a restart is required.
+    .PARAMETER Duration
+      Elapsed operation time as a TimeSpan.
+    .PARAMETER RunId
+      Caller-supplied identifier shared by operations in the same run.
     .EXAMPLE
       PS> New-OperationResult -Target 'Microsoft.GetHelp' -Source 'UPFAppxPackage' -Action 'Uninstall' -Status 'Skipped' -SkippedReason 'NoMatch'
 
@@ -74,7 +90,15 @@ function New-OperationResult {
     [string]$Detail,
     [string]$SkippedReason,
     [string]$ErrorMessage,
-    [hashtable]$Property
+    [hashtable]$Property,
+    [bool]$Changed,
+    [bool]$AlreadyCompliant,
+    [AllowNull()][object]$Before,
+    [AllowNull()][object]$After,
+    [int]$ExitCode,
+    [bool]$RebootRequired,
+    [timespan]$Duration,
+    [string]$RunId
   )
 
   $_result = [ordered]@{
@@ -102,6 +126,10 @@ function New-OperationResult {
 
   if ($PSBoundParameters.ContainsKey('ErrorMessage')) {
     $_result.Error = $ErrorMessage
+  }
+
+  foreach ($_field in @('Changed', 'AlreadyCompliant', 'Before', 'After', 'ExitCode', 'RebootRequired', 'Duration', 'RunId')) {
+    if ($PSBoundParameters.ContainsKey($_field)) { $_result[$_field] = $PSBoundParameters[$_field] }
   }
 
   if ($Property) {
@@ -149,6 +177,22 @@ function Add-OperationResult {
       fields.
     .PARAMETER PassThru
       Return the created result object after adding it to the collection.
+    .PARAMETER Changed
+      Optional known state-change flag forwarded to New-OperationResult.
+    .PARAMETER AlreadyCompliant
+      Optional initial compliance flag forwarded to New-OperationResult.
+    .PARAMETER Before
+      Optional captured initial state.
+    .PARAMETER After
+      Optional observed final state.
+    .PARAMETER ExitCode
+      Optional native exit code.
+    .PARAMETER RebootRequired
+      Optional restart requirement.
+    .PARAMETER Duration
+      Optional elapsed operation time.
+    .PARAMETER RunId
+      Optional identifier shared by results in one run.
     .EXAMPLE
       PS> $results = New-Object System.Collections.ArrayList
       PS> Add-OperationResult -Results $results -Target 'MapsToastTask' -Source 'ScheduledTask' -Action 'Disable' -Status 'Disabled' -Detail 'Scheduled task disabled.'
@@ -180,6 +224,14 @@ function Add-OperationResult {
     [string]$SkippedReason,
     [string]$ErrorMessage,
     [hashtable]$Property,
+    [bool]$Changed,
+    [bool]$AlreadyCompliant,
+    [AllowNull()][object]$Before,
+    [AllowNull()][object]$After,
+    [int]$ExitCode,
+    [bool]$RebootRequired,
+    [timespan]$Duration,
+    [string]$RunId,
     [switch]$PassThru
   )
 
@@ -189,7 +241,7 @@ function Add-OperationResult {
     Status = $Status
   }
 
-  foreach ($_parameterName in @('Source', 'Scope', 'Detail', 'SkippedReason', 'ErrorMessage', 'Property')) {
+  foreach ($_parameterName in @('Source', 'Scope', 'Detail', 'SkippedReason', 'ErrorMessage', 'Property', 'Changed', 'AlreadyCompliant', 'Before', 'After', 'ExitCode', 'RebootRequired', 'Duration', 'RunId')) {
     if ($PSBoundParameters.ContainsKey($_parameterName)) {
       $_resultParameters[$_parameterName] = $PSBoundParameters[$_parameterName]
     }
@@ -225,6 +277,8 @@ function Write-OperationResultLog {
     .PARAMETER Path
       Optional explicit output file path. When omitted, a timestamped .jsonl
       file is created under %TEMP%\winkit\logs.
+    .PARAMETER RunId
+      Identifier assigned to log entries that do not already carry a RunId.
     .EXAMPLE
       PS> $path = Write-OperationResultLog -Results $results -ScriptName 'Remove-Bloatware'
       PS> Write-Log -Message "Operation log: $path" -Color Gray
@@ -245,7 +299,8 @@ function Write-OperationResultLog {
     [System.Collections.IEnumerable]$Results,
 
     [string]$ScriptName,
-    [string]$Path
+    [string]$Path,
+    [string]$RunId
   )
 
   $_results = @($Results)
@@ -288,6 +343,7 @@ function Write-OperationResultLog {
     foreach ($_property in $_result.PSObject.Properties) {
       $_entry[$_property.Name] = $_property.Value
     }
+    if ($PSBoundParameters.ContainsKey('RunId') -and -not $_entry.Contains('RunId')) { $_entry.RunId = $RunId }
 
     [PSCustomObject]$_entry | ConvertTo-Json -Compress -Depth 8
   }
@@ -314,6 +370,12 @@ function Export-RegistrySettingState {
     .PARAMETER Settings
       Registry setting objects or hashtables with at least Path and Name
       properties. Additional properties are preserved.
+    .PARAMETER Detailed
+      Include versioned existence, type, raw value and registry view metadata
+      suitable for Compare-RegistrySettingState and Restore-RegistrySettingState.
+      ExpandString values are captured without expanding environment variables.
+    .PARAMETER View
+      Default view for detailed snapshots. A setting's View overrides this value.
     .EXAMPLE
       PS> Export-RegistrySettingState -Settings $taskbarSettings | ConvertTo-Json -Depth 3
 
@@ -331,7 +393,9 @@ function Export-RegistrySettingState {
   [CmdletBinding()]
   param (
     [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
-    [object[]]$Settings
+    [object[]]$Settings,
+    [switch]$Detailed,
+    [Microsoft.Win32.RegistryView]$View = [Microsoft.Win32.RegistryView]::Default
   )
 
   process {
@@ -352,6 +416,14 @@ function Export-RegistrySettingState {
 
       if (-not $_snapshot.Contains('Path') -or -not $_snapshot.Contains('Name')) {
         Write-Error 'Registry setting snapshots require Path and Name properties.'
+        continue
+      }
+
+      if ($Detailed) {
+        $_view = if ($_snapshot.Contains('View')) { $_snapshot.View } else { $View }
+        $_state = Get-PSFRegistryValueState -Path $_snapshot.Path -Name $_snapshot.Name -View $_view
+        foreach ($_property in $_state.PSObject.Properties) { $_snapshot[$_property.Name] = $_property.Value }
+        [PSCustomObject]$_snapshot
         continue
       }
 

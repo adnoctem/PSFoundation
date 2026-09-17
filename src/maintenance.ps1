@@ -111,7 +111,6 @@ function Get-PSModule {
   $usePSResource = $false
 
   if ($isPS7) {
-    Ensure-PSResourceGet
     $usePSResource = Test-PSResourceGetAvailable
   }
 
@@ -255,7 +254,6 @@ function Remove-PSModule {
   $usePSResource = $false
 
   if ($isPS7) {
-    Ensure-PSResourceGet
     $usePSResource = Test-PSResourceGetAvailable
   }
 
@@ -439,11 +437,8 @@ function Add-PSModule {
   $usePSResource = $false
 
   if ($isPS7) {
-    Ensure-PSResourceGet
     $usePSResource = Test-PSResourceGetAvailable
   }
-
-  $null = Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction SilentlyContinue
 
   # ---- Restore from JSON file ----
   if ($FromFile) {
@@ -462,6 +457,7 @@ function Add-PSModule {
       if ($PSCmdlet.ShouldProcess("$modName v$modVersion", 'Install')) {
         Write-Log -Message "Installing $modName $modVersion..." -Color Yellow
         try {
+          if ($isPS7) { Ensure-PSResourceGet; $usePSResource = Test-PSResourceGetAvailable }
           if ($usePSResource) {
             $params = @{
               Name    = $modName
@@ -471,6 +467,7 @@ function Add-PSModule {
             Install-PSResource @params -ErrorAction Stop
           }
           else {
+            $null = Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop
             $installParams = @{
               Name               = $modName
               RequiredVersion    = $modVersion
@@ -479,7 +476,7 @@ function Add-PSModule {
               AllowClobber       = $true
               SkipPublisherCheck = $true
             }
-            Install-Module @installParams
+            Install-Module @installParams -ErrorAction Stop
           }
           Write-Log -Message "  Installed $modName $modVersion" -Color Green
         }
@@ -510,6 +507,7 @@ function Add-PSModule {
   if ($PSCmdlet.ShouldProcess("$Name $displayLabel", 'Install')) {
     Write-Log -Message "Installing $Name $displayLabel..." -Color Yellow
     try {
+      if ($isPS7) { Ensure-PSResourceGet; $usePSResource = Test-PSResourceGetAvailable }
       if ($usePSResource) {
         $params = @{
           Name  = $Name
@@ -524,6 +522,7 @@ function Add-PSModule {
         Install-PSResource @params -ErrorAction Stop
       }
       else {
+        $null = Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop
         $installParams = @{
           Name               = $Name
           Scope              = $Scope
@@ -537,7 +536,7 @@ function Add-PSModule {
         elseif ($MinimumVersion) {
           $installParams.MinimumVersion = $MinimumVersion
         }
-        Install-Module @installParams
+        Install-Module @installParams -ErrorAction Stop
       }
       Write-Log -Message "  Installed $Name $displayLabel" -Color Green
     }

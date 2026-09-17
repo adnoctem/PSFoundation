@@ -8,6 +8,54 @@ BeforeAll {
   . $PSScriptRoot/../src/system.ps1
 }
 
+Describe 'Get-HostPrerequisiteReport' {
+  BeforeEach {
+    Mock Get-OSBuildNumber { 22621 }
+    Mock Get-OSEdition { 'Professional' }
+    Mock Get-UserInfo { @{ IsAdministrator = $false } }
+    Mock Get-Module { [PSCustomObject]@{ Version = [version]'4.0.0' } }
+    Mock Get-Service { $null }
+  }
+
+  It 'returns all failed constraints with expected values and guidance' {
+    $result = Get-HostPrerequisiteReport -MinBuild 26000 -Edition 'Enterprise' -RequireAdministrator -RequiredModules @{ Synthetic = '5.0.0' } -RequiredCommands 'PSFNonexistentCommand' -RequiredServices @{ PSFNonexistentService = 'Running' }
+    $result.Applicable | Should -BeFalse
+    $result.Checks.Count | Should -Be 6
+    @($result.Checks | Where-Object { -not $_.Satisfied }).Count | Should -Be 6
+    foreach ($check in $result.Checks) { $check.Guidance | Should -Not -BeNullOrEmpty }
+  }
+
+  It 'passes supported build, edition, command and service requirements' {
+    Mock Get-Service { [PSCustomObject]@{ Status = 'Running' } }
+    $result = Get-HostPrerequisiteReport -MinBuild 22000 -MaxBuild 26000 -Edition 'Professional' -RequiredCommands 'Get-Item' -RequiredServices @{ Synthetic = 'Running' } -RequiredModules @{ Synthetic = '3.0.0' }
+    $result.Applicable | Should -BeTrue
+    @($result.Checks | Where-Object { -not $_.Satisfied }).Count | Should -Be 0
+  }
+
+  It 'reports discovery errors and continues with other checks' {
+    Mock Get-OSBuildNumber { throw 'Registry unavailable' }
+    $result = Get-HostPrerequisiteReport -MinBuild 22000 -RequiredCommands 'Get-Item'
+    $result.Applicable | Should -BeFalse
+    $result.Checks[0].Reason | Should -Be 'DiscoveryFailed'
+    $result.Checks[1].Satisfied | Should -BeTrue
+  }
+
+  It 'accepts an empty set of constraints and rejects invalid ranges' {
+    (Get-HostPrerequisiteReport).Applicable | Should -BeTrue
+    { Get-HostPrerequisiteReport -MinBuild 20 -MaxBuild 10 } | Should -Throw
+    { Get-HostPrerequisiteReport -RequiredCommands 'Get-*' } | Should -Throw '*exact*'
+  }
+
+  It 'reports the native OS architecture and detects a mismatch' {
+    $actual = (Get-HostPrerequisiteReport -Architecture x86).Checks[0].Actual
+    $actual | Should -BeIn @('x86', 'x64', 'Arm64')
+    $different = if ($actual -eq 'x86') { 'x64' } else { 'x86' }
+    $result = Get-HostPrerequisiteReport -Architecture $different
+    $result.Applicable | Should -BeFalse
+    $result.Checks[0].Reason | Should -Be 'RequirementNotMet'
+  }
+}
+
 Describe 'Get-Hostname' {
   It 'returns an object with a non-empty Hostname string' {
     $result = Get-Hostname

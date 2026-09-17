@@ -2,11 +2,13 @@
 
 ### Features
 
-* **src:** add policy conversion and deployment error guidance ([2961477](https://github.com/adnoctem/PSFoundation/commit/2961477846997d1deabe9299dafc9c1163e99267))
+- **src:** add policy conversion and deployment error guidance
+  ([2961477](https://github.com/adnoctem/PSFoundation/commit/2961477846997d1deabe9299dafc9c1163e99267))
 
 ### Bug Fixes
 
-* **tools:** scope dependency bumps to declared version fields ([8507ee9](https://github.com/adnoctem/PSFoundation/commit/8507ee9f027016fe46a53eced61f949a7e83bb89))
+- **tools:** scope dependency bumps to declared version fields
+  ([8507ee9](https://github.com/adnoctem/PSFoundation/commit/8507ee9f027016fe46a53eced61f949a7e83bb89))
 
 ## [1.3.0](https://github.com/adnoctem/PSFoundation/compare/v1.2.0...v1.3.0) (2026-08-21)
 
