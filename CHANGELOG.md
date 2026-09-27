@@ -2,7 +2,8 @@
 
 ### Features
 
-* **src:** add registry restoration and operation diagnostics ([d289bda](https://github.com/adnoctem/PSFoundation/commit/d289bdadbd6a64b96bb109c3949cd75d0ca86769))
+- **src:** add registry restoration and operation diagnostics
+  ([d289bda](https://github.com/adnoctem/PSFoundation/commit/d289bdadbd6a64b96bb109c3949cd75d0ca86769))
 
 ## [1.4.0](https://github.com/adnoctem/PSFoundation/compare/v1.3.0...v1.4.0) (2026-09-16)
 

@@ -41,6 +41,7 @@ PSFoundation provides functions across these domains:
 | `log.ps1`          | Console logging helpers                                                                                                        |
 | `networking.ps1`   | IP validation, adapter resolution, address calculation, remote host reachability                                               |
 | `packages.ps1`     | Win32 and AppX package lifecycle management                                                                                    |
+| `office.ps1`       | Office deployment planning, verified media, scoped ODT operations, and protected recovery records                              |
 | `permissions.ps1`  | Elevation, ownership takeover, and encrypted credential files                                                                  |
 | `policies.ps1`     | LGPO integration and binary registry.pol reading and writing, including lossless raw round trips                               |
 | `registry.ps1`     | Registry key and value CRUD with path resolution                                                                               |
@@ -191,6 +192,105 @@ their original `ErrorRecord` and add `ErrorTranslation` when recognized.
 3010, with 1641/3010 also setting `RebootRequired`. Override `-SuccessExitCodes` and `-RebootExitCodes` for installers with other
 conventions. The legacy `-PassThru` status remains `ExitCode:n`, with a separate `Succeeded` flag. `-NoWait` now reports `Started` and
 `ProcessId`, because completion is not yet known. Callers that previously treated every result as `Installed` should check these outcomes.
+
+### Office deployment API
+
+Office commands separate discovery, media preparation, installation, removal, migration, and maintenance authority. A plan is a reviewable
+snapshot; execution rechecks the machine and media. These APIs are intended for thin orchestration wrappers such as winkit's Office scripts.
+
+| Capability             | Commands                                                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tool provisioning      | `Resolve-OfficeDeploymentToolSource`, `Install-OfficeDeploymentTool`, `Test-OfficeDeploymentTool`, `Get-OfficeDeploymentToolHelp`                                    |
+| Discovery and intent   | `Get-OfficeInventory`, `New-OfficeDeploymentConfiguration`, `Get-OfficeDeploymentPlan`                                                                               |
+| Independent assessment | `Test-OfficeDeployment`, `Get-OfficeActivationStatus`, `Test-OfficeDeploymentMedia`                                                                                  |
+| Media preparation      | `Save-OfficeDeploymentMedia`                                                                                                                                         |
+| Product lifecycle      | `Install-Office`, `Uninstall-Office`, `Switch-OfficeDeployment`                                                                                                      |
+| Maintenance            | `Update-Office`, `Set-OfficeUpdateConfiguration`, `Add-OfficeLanguage`, `Remove-OfficeLanguage`, `Set-OfficeApplicationSelection`, `Set-OfficeApplicationPreference` |
+| Recovery               | `Get-OfficeDeploymentRecovery`, `Resume-OfficeInstallation`, `Resume-OfficeMigration`                                                                                |
+
+```powershell
+$configuration = New-OfficeDeploymentConfiguration `
+  -TargetProductId Standard2024Volume `
+  -Architecture 64 `
+  -Language en-us,de-de
+
+# Prepare is the only deployment operation that downloads Office payloads.
+# The destination's parent must exist; a package is published only after verification.
+$media = Save-OfficeDeploymentMedia `
+  -Configuration $configuration `
+  -SourcePath 'C:\Deployment\Office2024' `
+  -OdtPath 'C:\Tools\ODT\setup.exe' `
+  -Confirm
+
+$plan = Get-OfficeDeploymentPlan `
+  -Action Install `
+  -Configuration $configuration `
+  -SourcePath $media.Path
+
+$plan | Format-List Action, State, Eligible, Blockers, Warnings, LanguageTransition
+$plan | Install-Office -OdtPath 'C:\Tools\ODT\setup.exe' -WhatIf
+```
+
+Default language is exactly `en-us`, independent of the operating system or account. Explicit lists preserve order; the first language is
+the primary shell language. `-AutoSourceLocales` opts into installed-Office discovery; add `-LocaleSource OperatingSystem` to use the
+machine installation UI language from `HKLM\SYSTEM\CurrentControlSet\Control\Nls\Language:InstallLanguage`. This is not the user's display
+language, keyboard layout, or regional format. Ambiguous installed-Office language evidence is a blocker rather than an implicit fallback.
+
+Executors accept only their matching plan action. `Uninstall-Office` requires exact `RemoveProductId` selections. `Switch-OfficeDeployment`
+alone combines selected removal and installation, including explicitly authorized broad MSI removal. Updates preserve other deployment
+dimensions; language operations preserve the primary language. An intentional primary-language replacement belongs to migration.
+`Set-OfficeUpdateConfiguration` accepts explicit `Enabled`, `UpdatePath`, `TargetVersion`, and `Channel` settings. Deadlines are
+deliberately excluded because they can forcibly close applications later. Application preferences accept validated Office
+`REG_SZ`/`REG_DWORD` records under `Settings.Preferences`, with `Key`, `Name`, `Value`, `Type`, `App`, and `Id`; their scope includes
+existing and future users.
+
+All mutation commands support `-WhatIf`; deployment commands also support `-DryRun`. Previews create no files, journals, or logs and never
+start an installer or stop applications. A compliant no-op returns `AlreadyCompliant`; an absent removal selection returns `AlreadyAbsent`.
+`-Confirm:$false` acknowledges the displayed scope but does not disable validation or language warnings. The module never exits the host,
+reboots it, invokes registry uninstall strings, or accepts arbitrary ODT XML or command-line arguments.
+
+Media schema 2 records the pinned build, product, channel, architecture, available languages, tool version, and complete payload hashes.
+Deployment language selection can be a subset of the available languages. Old `winkit-office-media.json` schema-1 packages require explicit
+preparation into a new directory. Files and manifests require Administrators/SYSTEM ownership and write access; hashes do not authenticate
+an attacker-replaced manifest. Local/UNC media must be accessible to the actual execution identity. Recovery records must remain local.
+
+Operation results have `SchemaVersion = 1` and include `RunId`, `Action`, `Phase`, `Status`, `ReasonCode`, `Before`, `After`,
+`Verification`, `Configuration`, `LanguageTransition`, `Activation`, `NativeResults`, `RebootRequired`, `RecoveryRequired`, `RecoveryPath`,
+`LogPaths`, and cleanup details. `Changed = $null` with `ChangeKnown = $false` means the outcome is uncertain, including after an invoked
+installer fails. Installation verification and activation are independent. Wrappers can use `WrapperExitCode` (`0`, `1`, or `3010`) while
+retaining native exit codes. Use `ConvertTo-Json -Depth 30` for the complete nested result. Do not flatten unknowns into successful
+compliance.
+
+Recovery journals are written atomically under `%ProgramData%\PSFoundation-Office` by default. They contain no product keys. A key is
+accepted only as `SecureString` and materialized in protected temporary XML for ODT; it is never placed on a process command line. Secure
+erasure of storage and redaction of ODT's own logs cannot be guaranteed. Cleanup failures retain the original error and report protected
+residue.
+
+```powershell
+$recovery = Get-OfficeDeploymentRecovery -RunId $result.RunId
+$recovery | Resume-OfficeInstallation -OdtPath 'C:\Tools\ODT\setup.exe' -WhatIf
+# Migration journals require Resume-OfficeMigration and fresh confirmation of remaining scope.
+```
+
+**Current validation limits:** the native execution host check is restricted to x64 Windows 11 desktop. Product IDs are deployment
+identifiers, not a claim of current vendor lifecycle support. Routine tests mock ODT and do not certify any real Office installation.
+Standalone MSI removal is unsupported. Recovery supports verification of completed installations, pre-launch continuation, and migration
+continuation after verified Click-to-Run removal. Replaying an uncertain partial installer returns `UnsupportedRecoveryState`; Quick Repair,
+Online Repair, rollback, and journal-free mutation are not implemented.
+
+Inventory uses Microsoft's documented `ClickToRun\Inventory\Office\16.0` product/build values and preserves incomplete registration and
+resource evidence. It deliberately does **not** promote `VersionToReport`, `ClientCulture`, or per-user language preferences to proof of
+complete installed languages or primary shell language. The native language/primary-language verification backend remains a validation gate:
+these fields currently remain unknown, preventing full compliance and maintenance that depends on preserving them. A native install may
+finish but return `VerificationFailed` for those unknowns. Installed-Office automatic locale preservation therefore remains blocked on
+native observations. Update-policy and preference execution returns `AppliedUnverified` until effective settings can be independently
+verified. Validate these scenarios on separately authorized disposable VMs before production adoption; a mocked passing suite is not that
+evidence.
+
+Microsoft references: [ODT operations](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/overview-office-deployment-tool),
+[configuration and language behavior](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/office-deployment-tool-configuration-options),
+[installed-build inventory](https://learn.microsoft.com/en-us/microsoft-365-apps/updates/microsoft-guidance-on-office-build-install), and
+[MSI migration](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/upgrade-from-msi-version).
 
 ### Self-elevation
 

@@ -26,6 +26,29 @@ Describe 'Module manifest exports' {
     @{ Name = 'Compare-RegistrySettingState' },
     @{ Name = 'Restore-RegistrySettingState' },
     @{ Name = 'Get-HostPrerequisiteReport' }
+    @{ Name = 'Resolve-OfficeDeploymentToolSource' }
+    @{ Name = 'Install-OfficeDeploymentTool' }
+    @{ Name = 'Test-OfficeDeploymentTool' }
+    @{ Name = 'Get-OfficeDeploymentToolHelp' }
+    @{ Name = 'Get-OfficeInventory' }
+    @{ Name = 'New-OfficeDeploymentConfiguration' }
+    @{ Name = 'Get-OfficeDeploymentPlan' }
+    @{ Name = 'Test-OfficeDeployment' }
+    @{ Name = 'Get-OfficeActivationStatus' }
+    @{ Name = 'Save-OfficeDeploymentMedia' }
+    @{ Name = 'Test-OfficeDeploymentMedia' }
+    @{ Name = 'Get-OfficeDeploymentRecovery' }
+    @{ Name = 'Install-Office' }
+    @{ Name = 'Uninstall-Office' }
+    @{ Name = 'Switch-OfficeDeployment' }
+    @{ Name = 'Resume-OfficeInstallation' }
+    @{ Name = 'Resume-OfficeMigration' }
+    @{ Name = 'Update-Office' }
+    @{ Name = 'Set-OfficeUpdateConfiguration' }
+    @{ Name = 'Add-OfficeLanguage' }
+    @{ Name = 'Remove-OfficeLanguage' }
+    @{ Name = 'Set-OfficeApplicationSelection' }
+    @{ Name = 'Set-OfficeApplicationPreference' }
   ) {
     Get-Command -Name $Name -Module PSFoundation -ErrorAction Stop | Should -Not -BeNullOrEmpty
   }

@@ -21,6 +21,31 @@ $publicAliases = @(
 )
 
 $publicFunctions = @(
+  # office.ps1
+  'Resolve-OfficeDeploymentToolSource',
+  'Install-OfficeDeploymentTool',
+  'Test-OfficeDeploymentTool',
+  'Get-OfficeDeploymentToolHelp',
+  'Get-OfficeInventory',
+  'New-OfficeDeploymentConfiguration',
+  'Get-OfficeDeploymentPlan',
+  'Test-OfficeDeployment',
+  'Get-OfficeActivationStatus',
+  'Save-OfficeDeploymentMedia',
+  'Test-OfficeDeploymentMedia',
+  'Get-OfficeDeploymentRecovery',
+  'Install-Office',
+  'Uninstall-Office',
+  'Switch-OfficeDeployment',
+  'Update-Office',
+  'Set-OfficeUpdateConfiguration',
+  'Add-OfficeLanguage',
+  'Remove-OfficeLanguage',
+  'Set-OfficeApplicationSelection',
+  'Set-OfficeApplicationPreference',
+  'Resume-OfficeInstallation',
+  'Resume-OfficeMigration',
+
   # common.ps1
   'New-OperationResult',
   'Add-OperationResult',
