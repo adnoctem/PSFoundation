@@ -1,0 +1,316 @@
+[
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-002A-0000-1000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Office 64-bit Components 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  0,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-002A-0407-1000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Shared 64-bit MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A7AB73A3-CB10-4AA5-9D38-6AEFFBDE4C91}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Teams Meeting Add-in for Microsoft Office",
+                       "DisplayVersion":  "1.24.31301",
+                       "Language":  1033,
+                       "Publisher":  "Microsoft",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\12.0\\Common\\LanguageResources",
+        "Values":  {
+                       "SKULanguage":  1031
+                   },
+        "SubKeys":  [
+                        "InstalledUIs"
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\12.0\\Common\\LanguageResources\\InstalledUIs",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-0015-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Access MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-0016-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Excel MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-0018-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office PowerPoint MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-0019-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Publisher MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-001A-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Outlook MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-001B-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Word MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-001F-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Proof (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-001F-0409-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Proof (English) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1033,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-001F-040C-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Proof (French) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1036,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-001F-0410-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Proof (Italian) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1040,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-002C-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Proofing (German) 2007",
+                       "DisplayVersion":  "12.0.4518.1014",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-0044-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office InfoPath MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-006E-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Shared MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-00A1-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office OneNote MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90120000-00BA-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Groove MUI (German) 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90140000-2005-0000-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office File Validation Add-In",
+                       "DisplayVersion":  "14.0.5130.5003",
+                       "Language":  0,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{91120000-0030-0000-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Enterprise 2007",
+                       "DisplayVersion":  "12.0.6612.1000",
+                       "Language":  0,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F40BBEC7-C2A4-4A00-9B24-7A055A2C5262}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Office Live Add-in 1.5",
+                       "DisplayVersion":  "2.0.4024.1",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    }
+]

@@ -180,6 +180,111 @@ Describe 'Office inventory and compliance evidence' {
   }
 }
 
+Describe 'Office native registry regression fixtures' {
+  BeforeEach {
+    $script:registryFixture = @()
+    Mock Get-PSFOfficeRegistrySnapshot { $script:registryFixture }
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' }
+  }
+
+  It 'keeps Office 2007 proofing languages separate from UI resources and add-ins' {
+    $script:registryFixture = Get-Content "$PSScriptRoot/fixtures/office/office2007-registry.json" -Raw | ConvertFrom-Json
+    $observed = Get-OfficeInventory
+    $observed.Unknowns.Count | Should -Be 0
+    @($observed.Msi | Where-Object Name -Match 'Teams Meeting|Office Live').Count | Should -Be 0
+    @($observed.RelatedComponents | Where-Object Role -EQ AddIn).Count | Should -Be 2
+    @($observed.Msi | Where-Object ResourceKind -EQ Proofing | Select-Object -ExpandProperty LanguageId -Unique | Sort-Object) | Should -Be @('de-de', 'en-us', 'fr-fr', 'it-it')
+    @($observed.Msi | Where-Object ResourceKind -EQ LanguageResource | Select-Object -ExpandProperty LanguageId -Unique) | Should -Be @('de-de')
+    @($observed.Msi | Where-Object Name -EQ 'Microsoft Office Enterprise 2007').Count | Should -Be 1
+    @($observed.LanguageEvidence.SKULanguage | Where-Object { $_ }) | Should -Be @(1031)
+    $script:nativeObserved = $observed
+    Mock Get-OfficeInventory { $script:nativeObserved }
+    { New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -AutoSourceLocales } | Should -Throw '*preservation*'
+  }
+
+  It 'does not classify Click-to-Run infrastructure as legacy MSI Office' {
+    $script:registryFixture = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    $observed = Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 0
+    $observed.Unknowns.Count | Should -Be 0
+    @($observed.RelatedComponents | Where-Object Role -EQ ClickToRunInfrastructure).Count | Should -Be 4
+    @($observed.RelatedComponents | Where-Object Role -EQ AddIn).Count | Should -Be 1
+    $observed.Products[0].ProductId | Should -Be Standard2019Volume
+    $observed.Products[0].Architecture | Should -Be '32'
+    $observed.Products[0].RegisteredLanguages | Should -Be @('de-de')
+    $observed.Products[0].Version | Should -BeNullOrEmpty
+    $observed.Products[0].Languages | Should -BeNullOrEmpty
+    $observed.Products[0].PrimaryLanguage | Should -BeNullOrEmpty
+    $observed.Products[0].ExcludeApp | Should -Be @('groove')
+  }
+
+  It 'uses only the active product language registration' {
+    $script:registryFixture = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    $script:registryFixture += [PSCustomObject]@{
+      View    = 'Registry64'
+      Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs\00000000-0000-0000-0000-000000000002\Standard2019Volume.16'
+      Values  = [PSCustomObject]@{}
+      SubKeys = @('en-us', 'fr-fr', 'x-none')
+    }
+    (Get-OfficeInventory).Products[0].RegisteredLanguages | Should -Be @('de-de')
+    ($script:registryFixture | Where-Object Path -EQ 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs').Values.ActiveConfiguration = 'invalid'
+    (Get-OfficeInventory).Products[0].RegisteredLanguages.Count | Should -Be 0
+  }
+
+  It 'does not treat orphaned Click-to-Run infrastructure as a clean machine' {
+    $script:registryFixture = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    $script:registryFixture = @($script:registryFixture | Where-Object { $_.Path -like '*Uninstall*' })
+    $observed = Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 0
+    $observed.Unknowns | Should -Contain ClickToRunInfrastructureWithoutConfiguration
+  }
+
+  It 'keeps unfamiliar add-ins blocked rather than ignoring arbitrary Office registrations' {
+    $script:registryFixture = @([PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\synthetic-office-component'
+        Values = [PSCustomObject]@{ Publisher = 'Microsoft Corporation'; DisplayName = 'Microsoft Office Unknown Add-in'; DisplayVersion = '1.0'; WindowsInstaller = 1 }
+      })
+    $observed = Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 1
+    $observed.RelatedComponents.Count | Should -Be 0
+  }
+
+  It 'blocks native installation before mutation while required verification is unavailable' {
+    $observed = Get-OfficeInventory
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de -Version 16.0.10417.20208
+    Mock Test-OfficeDeploymentMedia { [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20208' } } }
+    $plan = Get-OfficeDeploymentPlan -Action Install -Configuration $target -SourcePath C:\Media -Inventory $observed
+    $plan.Eligible | Should -BeFalse
+    $plan.Blockers | Should -Contain UnsupportedNativeVerification
+  }
+
+  It 'reports migration verification limits without false unsupported-MSI blockers' {
+    $script:registryFixture = Get-Content "$PSScriptRoot/fixtures/office/office2007-registry.json" -Raw | ConvertFrom-Json
+    $observed = Get-OfficeInventory
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de -Version 16.0.10417.20208
+    Mock Test-OfficeDeploymentMedia { [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20208' } } }
+    $plan = Get-OfficeDeploymentPlan -Action Migrate -RemoveMsi -Configuration $target -SourcePath C:\Media -Inventory $observed
+    $plan.Blockers | Should -Not -Contain UnsupportedMsiComponent
+    $plan.Blockers | Should -Contain UnsupportedNativeVerification
+    $plan.LanguageTransition.Known | Should -BeFalse
+  }
+
+  It 'detects disappearance of an add-in outside removal authority' {
+    $component = [PSCustomObject]@{ ProductCode = 'synthetic-addin'; Name = 'Synthetic Add-in'; Version = '1.0'; RegistryView = 'Registry64'; Role = 'AddIn' }
+    $before = New-TestOfficeInventory
+    $before | Add-Member -NotePropertyName RelatedComponents -NotePropertyValue @($component)
+    $after = New-TestOfficeInventory
+    $after | Add-Member -NotePropertyName RelatedComponents -NotePropertyValue @($component)
+    $plan = [PSCustomObject]@{ Action = 'Remove'; Before = $before; RemoveProductId = @('Standard2019Volume') }
+    (Test-PSFOfficePostcondition $plan $after).Compliant | Should -BeTrue
+    $after.RelatedComponents = @()
+    $result = Test-PSFOfficePostcondition $plan $after
+    $result.Compliant | Should -BeFalse
+    $result.Discrepancies | Should -Contain RelatedAddInChanged
+  }
+}
+
 Describe 'Office plans and narrow XML generation' {
   BeforeEach {
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language en-us, de-de -Version 16.0.17932.20162

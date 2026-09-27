@@ -1,0 +1,170 @@
+[
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration",
+        "Values":  {
+                       "CDNBaseUrl":  "f2e724c1-748f-4b47-8fb8-8e0d210e9208",
+                       "ClientCulture":  "de-de",
+                       "Platform":  "x86",
+                       "ProductReleaseIds":  "Standard2019Volume",
+                       "Standard2019Volume.ExcludedApps":  "groove",
+                       "VersionToReport":  "16.0.10417.20208"
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs",
+        "Values":  {
+                       "ActiveConfiguration":  "00000000-0000-0000-0000-000000000001"
+                   },
+        "SubKeys":  [
+                        "00000000-0000-0000-0000-000000000001"
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+                        "culture",
+                        "Standard2019Volume.16"
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\culture",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+                        "de-de.16",
+                        "x-none.16"
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\culture\\de-de.16",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\culture\\x-none.16",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\Standard2019Volume.16",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+                        "de-de",
+                        "x-none"
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\Standard2019Volume.16\\de-de",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\Standard2019Volume.16\\x-none",
+        "Values":  {
+
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90160000-008F-0000-1000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Office 16 Click-to-Run Licensing Component",
+                       "DisplayVersion":  "16.0.10417.20208",
+                       "Language":  0,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90160000-00DD-0000-1000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Office 16 Click-to-Run Extensibility Component 64-bit Registration",
+                       "DisplayVersion":  "16.0.10417.20208",
+                       "Language":  0,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry64",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A7AB73A3-CB10-4AA5-9D38-6AEFFBDE4C91}",
+        "Values":  {
+                       "DisplayName":  "Microsoft Teams Meeting Add-in for Microsoft Office",
+                       "DisplayVersion":  "1.26.21803",
+                       "Language":  1033,
+                       "Publisher":  "Microsoft",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90160000-008C-0000-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Office 16 Click-to-Run Extensibility Component",
+                       "DisplayVersion":  "16.0.10417.20208",
+                       "Language":  0,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    },
+    {
+        "View":  "Registry32",
+        "Path":  "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{90160000-008C-0407-0000-0000000FF1CE}",
+        "Values":  {
+                       "DisplayName":  "Office 16 Click-to-Run Localization Component",
+                       "DisplayVersion":  "16.0.10417.20208",
+                       "Language":  1031,
+                       "Publisher":  "Microsoft Corporation",
+                       "WindowsInstaller":  1
+                   },
+        "SubKeys":  [
+
+                    ]
+    }
+]

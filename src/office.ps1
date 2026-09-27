@@ -931,6 +931,8 @@ function Get-PSFOfficeRegistrySnapshot {
                 'UpdateChannel',
                 'ClientCulture',
                 'InstallLanguage',
+                'SKULanguage',
+                'Language',
                 'ActiveConfiguration',
                 'DisplayName',
                 'DisplayVersion',
@@ -976,6 +978,7 @@ function Get-OfficeInventory {
 
   $products = New-Object Collections.ArrayList
   $msi = New-Object Collections.ArrayList
+  $related = New-Object Collections.ArrayList
   $unknowns = New-Object Collections.ArrayList
   $records = @()
   try {
@@ -991,9 +994,10 @@ function Get-OfficeInventory {
   }
   $registeredResources = @($records | Where-Object { $_.Path -like '*ClickToRun\ProductReleaseIDs*' } | ForEach-Object {
       [PSCustomObject]@{
-        View    = $_.View
-        Path    = $_.Path
-        SubKeys = @($_.SubKeys)
+        View                = $_.View
+        Path                = $_.Path
+        SubKeys             = @($_.SubKeys)
+        ActiveConfiguration = $_.Values.ActiveConfiguration
       }
     })
   foreach ($record in $records) {
@@ -1038,15 +1042,28 @@ function Get-OfficeInventory {
         if ($values.PSObject.Properties.Name -contains "$id.ExcludedApps") {
           $excluded = @(([string]$values."$id.ExcludedApps" -split ',') | Where-Object { $_ } | Sort-Object)
         }
+        # These are registered candidates, not proof of complete installed UI
+        # resources or the initial shell language. Ignore inactive configurations.
+        $registeredLanguages = @()
+        $releaseRoot = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs'
+        $active = @($records | Where-Object { $_.View -eq $record.View -and $_.Path -eq $releaseRoot })
+        if ($active.Count -eq 1 -and [string]$active[0].Values.ActiveConfiguration -match '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') {
+          $productPath = $releaseRoot + '\' + $active[0].Values.ActiveConfiguration + '\' + $id + '.16'
+          $resource = @($records | Where-Object { $_.View -eq $record.View -and $_.Path -eq $productPath })
+          if ($resource.Count -eq 1) {
+            $registeredLanguages = @($resource[0].SubKeys | Where-Object { $_ -match '^[a-z]{2,3}-[a-z]{2,4}$' -and $_ -ne 'x-none' } | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object -Unique)
+          }
+        }
         [void]$products.Add([PSCustomObject][ordered]@{
-            ProductId       = $id
-            Architecture    = $architecture
-            Version         = $installedVersion
-            Channel         = $channel
-            Languages       = $null
-            PrimaryLanguage = $null
-            ExcludeApp      = $excluded
-            Evidence        = @(
+            ProductId           = $id
+            Architecture        = $architecture
+            Version             = $installedVersion
+            Channel             = $channel
+            Languages           = $null
+            PrimaryLanguage     = $null
+            RegisteredLanguages = $registeredLanguages
+            ExcludeApp          = $excluded
+            Evidence            = @(
               "$($record.View):$($record.Path)",
               "Installed version source: ClickToRun/Inventory/Office/16.0:OfficePackageVersion",
               "Telemetry VersionToReport=$($values.VersionToReport); not installation evidence",
@@ -1058,12 +1075,31 @@ function Get-OfficeInventory {
     elseif ($record.Path -like '*\Uninstall\*') {
       $keyName = Split-Path $record.Path -Leaf
       $isMicrosoft = $values.Publisher -match '^Microsoft(?: Corporation)?$'
-      $officeCode = $keyName -match '^\{90[12][0-9]0000-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$'
+      $officeCode = $keyName -match '^\{9[01](12|14|15|16)0000-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$'
       $officeName = $values.DisplayName -match 'Office|Visio|Project|Access|SharePoint Designer|InfoPath|Lync'
       $controller = $values.UninstallString -match '\\OFFICE(12|14|15|16)\\Office Setup Controller\\setup\.exe"?\s+/uninstall\s'
+      $infrastructure = $keyName -match '^\{9[01]160000-(008C|008F|00DD)-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$' -and
+      $values.DisplayName -match '^Office 16 Click-to-Run (Licensing|Extensibility|Localization) Component(?: 64-bit Registration)?$'
+      $addIn = $values.WindowsInstaller -eq 1 -and $values.DisplayName -in @(
+        'Microsoft Teams Meeting Add-in for Microsoft Office',
+        'Microsoft Office Live Add-in 1.5'
+      )
+      if ($isMicrosoft -and ($infrastructure -or $addIn)) {
+        [void]$related.Add([PSCustomObject]@{
+            ProductCode  = $keyName
+            Name         = $values.DisplayName
+            Version      = $values.DisplayVersion
+            RegistryView = $record.View
+            Role         = if ($infrastructure) { 'ClickToRunInfrastructure' } else { 'AddIn' }
+          })
+        if ($infrastructure -and -not $configuredRecords.Count) {
+          [void]$unknowns.Add('ClickToRunInfrastructureWithoutConfiguration')
+        }
+        continue
+      }
       if ($isMicrosoft -and ($officeCode -or ($officeName -and ($values.WindowsInstaller -eq 1 -or $controller)))) {
         $resourceKind = 'ProductOrComponent'
-        if ($values.DisplayName -match 'Proofing') {
+        if (($officeCode -and $keyName -match '^\{[^-]+-(001F|002C)-') -or $values.DisplayName -match '\bProof(?:ing)?\b') {
           $resourceKind = 'Proofing'
         }
         elseif ($values.DisplayName -match 'Language Interface Pack') {
@@ -1105,12 +1141,17 @@ function Get-OfficeInventory {
     $unique += $group.Group[0]
   }
   [PSCustomObject][ordered]@{
-    SchemaVersion       = 1
-    MachineId           = Get-PSFOfficeMachineId
-    Products            = @($unique | Sort-Object ProductId)
-    Msi                 = @($msi | Sort-Object ProductCode -Unique)
-    Unknowns            = @($unknowns | Sort-Object -Unique)
-    RegisteredResources = $registeredResources
+    SchemaVersion           = 1
+    MachineId               = Get-PSFOfficeMachineId
+    Products                = @($unique | Sort-Object ProductId)
+    Msi                     = @($msi | Sort-Object ProductCode -Unique)
+    RelatedComponents       = @($related | Sort-Object ProductCode, RegistryView)
+    Unknowns                = @($unknowns | Sort-Object -Unique)
+    RegisteredResources     = $registeredResources
+    LanguageEvidence        = @($records | Where-Object { $_.Path -like '*\Common\LanguageResources' } | ForEach-Object {
+        [PSCustomObject]@{ View = $_.View; Path = $_.Path; SKULanguage = $_.Values.SKULanguage; InstallLanguage = $_.Values.InstallLanguage }
+      })
+    VerificationLimitations = @('Languages', 'PrimaryLanguage')
   }
 }
 
@@ -1493,6 +1534,10 @@ function Get-OfficeDeploymentPlan {
     }
   }
   $needsMedia = $Action -in @('Install', 'Migrate', 'Update', 'AddLanguage', 'SetApplicationSelection') -and $state -ne 'Compliant'
+  if ($Action -in @('Install', 'Migrate') -and $state -ne 'Compliant' -and $Inventory.VerificationLimitations.Count) {
+    [void]$blockers.Add('UnsupportedNativeVerification')
+    [void]$warnings.Add('The native inventory backend cannot verify: ' + ($Inventory.VerificationLimitations -join ', ') + '. No deployment may start until these postconditions can be verified.')
+  }
   if ($needsMedia -and -not $SourcePath) {
     [void]$blockers.Add('MissingMedia')
   }
@@ -2749,6 +2794,20 @@ function Test-PSFOfficePostcondition {
     $After
   )
 
+  # Known add-ins are outside Office removal authority. Their registrations must
+  # survive every workflow; this does not claim application/add-in compatibility.
+  $changedAddIns = @($Plan.Before.RelatedComponents | Where-Object { $_.Role -eq 'AddIn' } | Where-Object {
+      $beforeComponent = $_
+      $afterComponent = @($After.RelatedComponents | Where-Object { $_.ProductCode -eq $beforeComponent.ProductCode -and $_.RegistryView -eq $beforeComponent.RegistryView })
+      $afterComponent.Count -ne 1 -or (Get-PSFOfficeFingerprint $beforeComponent) -ne (Get-PSFOfficeFingerprint $afterComponent[0])
+    })
+  if ($changedAddIns.Count) {
+    return [PSCustomObject]@{
+      Compliant     = $false
+      Discrepancies = @('RelatedAddInChanged')
+      Unknowns      = @()
+    }
+  }
   if ($Plan.Action -eq 'Remove') {
     $remaining = @($After.Products.ProductId)
     $retained = @($Plan.Before.Products | Where-Object { $_.ProductId -notin $Plan.RemoveProductId })
