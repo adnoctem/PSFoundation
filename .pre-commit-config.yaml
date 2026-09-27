@@ -53,19 +53,31 @@ repos:
         pass_filenames: false
 
       - id: powershell-format-check
-        name: PowerShell format check
-        entry: pwsh -NoProfile -ExecutionPolicy Bypass -File ./tools/format.ps1 -Check
+        name: PowerShell 7 format check
+        entry: pwsh -NoProfile -ExecutionPolicy Bypass -File ./PSFoundation.ps1 format -Check
+        language: system
+        pass_filenames: false
+
+      - id: windows-powershell-format-check
+        name: Windows PowerShell 5.1 format check
+        entry: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./PSFoundation.ps1 format -Check
         language: system
         pass_filenames: false
 
       - id: powershell-format
         name: PowerShell format
-        entry: pwsh -NoProfile -ExecutionPolicy Bypass -File ./tools/format.ps1
+        entry: pwsh -NoProfile -ExecutionPolicy Bypass -File ./PSFoundation.ps1 format
         language: system
         pass_filenames: false
 
       - id: psscriptanalyzer
-        name: PSScriptAnalyzer
-        entry: pwsh -NoProfile -ExecutionPolicy Bypass -File ./tools/lint.ps1
+        name: PSScriptAnalyzer (PowerShell 7)
+        entry: pwsh -NoProfile -ExecutionPolicy Bypass -File ./PSFoundation.ps1 lint
+        language: system
+        pass_filenames: false
+
+      - id: windows-powershell-psscriptanalyzer
+        name: PSScriptAnalyzer (Windows PowerShell 5.1)
+        entry: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./PSFoundation.ps1 lint
         language: system
         pass_filenames: false

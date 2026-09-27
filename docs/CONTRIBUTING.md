@@ -137,8 +137,12 @@ automatically before each commit. After installing [pre-commit](https://pre-comm
 pre-commit install
 ```
 
-The hooks invoke `.\PSFoundation.ps1 format -Check` and `.\PSFoundation.ps1 lint` with zero additional configuration beyond having run
-`.\PSFoundation.ps1 init` to install the module dependencies.
+The hooks invoke `.\PSFoundation.ps1 format -Check` and `.\PSFoundation.ps1 lint` under both PowerShell 7 (`pwsh`) and Windows PowerShell
+5.1 (`powershell.exe`), matching the CI engine matrix. Both engines must be available on the development host; run `.\PSFoundation.ps1 init`
+in each engine to install its dependencies. Formatting writes use PowerShell 7.
+
+Run format checks, lint, and tests under both engines before handing changes back. Passing tests under both engines does not replace lint:
+some PSScriptAnalyzer rules, including singular-noun detection, use different implementations between engines.
 
 ### Running Tests
 

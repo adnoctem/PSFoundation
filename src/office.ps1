@@ -1967,6 +1967,7 @@ function Test-OfficeDeploymentMedia {
     .EXAMPLE
       Test-OfficeDeploymentMedia -SourcePath C:\Media\Office -Configuration $target
   #>
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Media names the deployment payload as a collective noun; Windows PowerShell and PowerShell 7 pluralizers disagree.')]
   [CmdletBinding()]
   [OutputType([PSCustomObject])]
   param (
@@ -2304,6 +2305,7 @@ function Save-OfficeDeploymentMedia {
     .EXAMPLE
       Save-OfficeDeploymentMedia -Configuration $target -SourcePath C:\Media\Office -OdtPath C:\ODT\setup.exe -WhatIf
   #>
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Media names the deployment payload as a collective noun; Windows PowerShell and PowerShell 7 pluralizers disagree.')]
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
   [OutputType([PSCustomObject])]
   param (
