@@ -79,6 +79,8 @@ $publicFunctions = @(
   'Get-OutlookStoreRoot',
   'Add-OutlookStoreRoot',
   'Get-OutlookSubFolder',
+  'Get-OutlookStandardFolderIdentity',
+  'Get-OutlookFolderPlan',
 
   # networking.ps1
   'Get-DefaultNetworkAdapter',

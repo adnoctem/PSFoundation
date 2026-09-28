@@ -456,3 +456,504 @@ function Get-OutlookSubFolder {
 
   return $null
 }
+
+function Get-OutlookStandardFolderIdentity {
+  <#
+    .SYNOPSIS
+      Reads locale-independent standard folder identities for one Outlook store.
+    .DESCRIPTION
+      Returns plain records keyed by StoreID and EntryID. Outlook 2010 and later
+      use Store.GetDefaultFolder. Outlook 2007 uses read-only MAPI properties,
+      with the default Inbox as an additional property source. No localized
+      folder names are used. Missing optional properties are reported separately
+      from unexpected provider errors. Does not create optional default folders.
+    .PARAMETER Namespace
+      Connected Outlook MAPI namespace.
+    .PARAMETER StoreRoot
+      Root folder of the selected store, owned by the caller.
+    .EXAMPLE
+      PS> Get-OutlookStandardFolderIdentity -Namespace $context.Namespace -StoreRoot $root
+  #>
+
+  [CmdletBinding()]
+  param (
+    [Parameter(Mandatory = $true)]
+    [object]
+    $Namespace,
+
+    [Parameter(Mandatory = $true)]
+    [object]
+    $StoreRoot
+  )
+
+  $_definitions = [ordered]@{
+    DeletedItems      = 3
+    Outbox            = 4
+    SentItems         = 5
+    Inbox             = 6
+    Calendar          = 9
+    Contacts          = 10
+    Journal           = 11
+    Notes             = 12
+    Tasks             = 13
+    Drafts            = 16
+    AllPublicFolders  = 18
+    Conflicts         = 19
+    SyncIssues        = 20
+    LocalFailures     = 21
+    ServerFailures    = 22
+    Junk              = 23
+    RssFeeds          = 25
+    ToDo              = 28
+    ManagedEmail      = 29
+    SuggestedContacts = 30
+  }
+
+  $_store = $null
+  $_default = $null
+  $_inbox = $null
+  $_accessors = New-Object Collections.ArrayList
+  try {
+    $_store = $StoreRoot.Store
+    $_application = $Namespace.Application
+    try {
+      $_major = [int](($_application.Version -split '\.')[0])
+    }
+    finally {
+      Remove-ComObject $_application
+    }
+
+    if ($_major -ge 14) {
+      foreach ($_definition in $_definitions.GetEnumerator()) {
+        $_folder = $null
+        try {
+          $_folder = $_store.GetDefaultFolder($_definition.Value)
+          if ($_folder -and ([string]::IsNullOrWhiteSpace([string]$_folder.EntryID) -or $_folder.StoreID -ne $StoreRoot.StoreID)) {
+            throw 'Standard folder identity is empty or belongs to another store.'
+          }
+          [PSCustomObject]@{
+            Kind     = $_definition.Key
+            StoreID  = [string]$StoreRoot.StoreID
+            EntryID  = if ($_folder) { [string]$_folder.EntryID } else { $null }
+            State    = if ($_folder) { 'Resolved' } else { 'Absent' }
+            Evidence = 'Store.GetDefaultFolder'
+          }
+        }
+        catch {
+          $_exception = $_.Exception
+          while ($_exception.InnerException) {
+            $_exception = $_exception.InnerException
+          }
+          # MAPI_E_NOT_FOUND and MAPI_E_NO_SUPPORT describe unavailable optional
+          # folders. Access denied, disconnected providers, and other errors fail.
+          if ($_exception.HResult -notin @(-2147221233, -2147221246) -and
+            -not ($_exception.HResult -eq -2147024809 -and $_definition.Key -in @('AllPublicFolders', 'ManagedEmail', 'SuggestedContacts', 'ToDo', 'RssFeeds'))) {
+            throw "Cannot determine standard folder '$($_definition.Key)' in the selected store: $($_.Exception.Message)"
+          }
+          [PSCustomObject]@{
+            Kind     = $_definition.Key
+            StoreID  = [string]$StoreRoot.StoreID
+            EntryID  = $null
+            State    = 'Unavailable'
+            Evidence = 'Store.GetDefaultFolder'
+          }
+        }
+        finally {
+          Remove-ComObject $_folder
+        }
+      }
+      return
+    }
+
+    $_known = @{}
+    if (-not $_store.IsDataFileStore -or [IO.Path]::GetExtension([string]$_store.FilePath) -ne '.pst') {
+      throw 'Outlook 2007 standard-folder discovery currently supports PST stores only. Use a newer classic Outlook client for Exchange or OST stores.'
+    }
+    $_default = $Namespace.DefaultStore
+    if ($_default.StoreID -eq $StoreRoot.StoreID) {
+      # Inbox is mandatory in a default delivery store. Do not request optional
+      # folders through Namespace.GetDefaultFolder, which can create them.
+      $_inbox = $Namespace.GetDefaultFolder(6)
+      if ($_inbox.StoreID -ne $StoreRoot.StoreID) {
+        throw 'Default Inbox belongs to a different store.'
+      }
+      $_known.Inbox = [string]$_inbox.EntryID
+      $null = $_accessors.Add($_inbox.PropertyAccessor)
+    }
+    $null = $_accessors.Add($StoreRoot.PropertyAccessor)
+    $null = $_accessors.Add($_store.PropertyAccessor)
+
+    $_tags = [ordered]@{
+      Outbox       = '35E2'
+      DeletedItems = '35E3'
+      SentItems    = '35E4'
+      Calendar     = '36D0'
+      Contacts     = '36D1'
+      Journal      = '36D2'
+      Notes        = '36D3'
+      Tasks        = '36D4'
+      Drafts       = '36D7'
+    }
+
+    foreach ($_accessor in $_accessors) {
+      foreach ($_tag in $_tags.GetEnumerator()) {
+        if ($_known.ContainsKey($_tag.Key)) {
+          continue
+        }
+        try {
+          $_binary = $_accessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x$($_tag.Value)0102")
+          if ($_binary -and $_binary.Length -gt 0) {
+            $_known[$_tag.Key] = $_accessor.BinaryToString($_binary)
+          }
+        }
+        catch {
+          $_exception = $_.Exception
+          while ($_exception.InnerException) {
+            $_exception = $_exception.InnerException
+          }
+          if ($_exception.HResult -ne -2147221233) {
+            throw
+          }
+        }
+      }
+
+      try {
+        $_additional = $_accessor.GetProperty('http://schemas.microsoft.com/mapi/proptag/0x36D81102')
+        $_kinds = @('Conflicts', 'SyncIssues', 'LocalFailures', 'ServerFailures', 'Junk')
+        for ($_index = 0; $_index -lt [math]::Min($_additional.Length, $_kinds.Count); $_index++) {
+          if ($_additional[$_index] -and -not $_known.ContainsKey($_kinds[$_index])) {
+            $_known[$_kinds[$_index]] = $_accessor.BinaryToString($_additional[$_index])
+          }
+        }
+      }
+      catch {
+        $_exception = $_.Exception
+        while ($_exception.InnerException) {
+          $_exception = $_exception.InnerException
+        }
+        if ($_exception.HResult -ne -2147221233) {
+          throw
+        }
+      }
+
+      # PR_ADDITIONAL_REN_ENTRYIDS_EX contains bounded PersistData blocks.
+      try {
+        [byte[]]$_data = $_accessor.GetProperty('http://schemas.microsoft.com/mapi/proptag/0x36D90102')
+        $_offset = 0
+        while ($_offset -lt $_data.Length) {
+          if ($_data.Length - $_offset -lt 4) {
+            throw 'Truncated PersistData header.'
+          }
+          $_id = [BitConverter]::ToUInt16($_data, $_offset)
+          $_size = [BitConverter]::ToUInt16($_data, $_offset + 2)
+          $_offset += 4
+          if ($_id -eq 0) {
+            break
+          }
+          $_end = $_offset + $_size
+          if ($_end -gt $_data.Length) {
+            throw 'PersistData exceeds property bounds.'
+          }
+          $_kind = switch ($_id) {
+            0x8001 { 'RssFeeds' }
+            0x8004 { 'ToDo' }
+            0x8008 { 'SuggestedContacts' }
+          }
+          if (-not $_kind) {
+            $_offset = $_end
+            continue
+          }
+          while ($_offset -lt $_end) {
+            if ($_end - $_offset -lt 4) {
+              throw 'Truncated PersistElement header.'
+            }
+            $_elementId = [BitConverter]::ToUInt16($_data, $_offset)
+            $_length = [BitConverter]::ToUInt16($_data, $_offset + 2)
+            $_offset += 4
+            if ($_offset + $_length -gt $_end) {
+              throw 'PersistElement exceeds block bounds.'
+            }
+            if ($_elementId -eq 0) {
+              if ($_length -ne 0) {
+                throw 'ELEMENT_SENTINEL must have zero length.'
+              }
+              $_offset = $_end
+              break
+            }
+            if ($_elementId -eq 1 -and $_length -gt 0 -and -not $_known.ContainsKey($_kind)) {
+              [byte[]]$_entry = $_data[$_offset..($_offset + $_length - 1)]
+              $_known[$_kind] = $_accessor.BinaryToString($_entry)
+            }
+            $_offset += $_length
+          }
+        }
+      }
+      catch {
+        $_exception = $_.Exception
+        while ($_exception.InnerException) {
+          $_exception = $_exception.InnerException
+        }
+        if ($_exception.HResult -ne -2147221233) {
+          throw
+        }
+      }
+    }
+
+    foreach ($_definition in $_definitions.GetEnumerator()) {
+      [PSCustomObject]@{
+        Kind     = $_definition.Key
+        StoreID  = [string]$StoreRoot.StoreID
+        EntryID  = $_known[$_definition.Key]
+        State    = if ($_known.ContainsKey($_definition.Key)) {
+          'Resolved'
+        }
+        elseif ($_definition.Key -eq 'Inbox') {
+          'Unresolved'
+        }
+        else {
+          'Absent'
+        }
+        Evidence = 'Outlook2007.MAPI'
+      }
+    }
+  }
+  finally {
+    foreach ($_accessor in $_accessors) {
+      Remove-ComObject $_accessor
+    }
+    Remove-ComObject $_inbox $_default $_store
+  }
+}
+
+function Get-OutlookFolderPlan {
+  <#
+    .SYNOPSIS
+      Builds a read-only, locale-independent Outlook folder processing plan.
+    .DESCRIPTION
+      Resolves one exact store-relative path and optionally its descendants.
+      Standard folders require inclusion by identity, custom exclusions win,
+      and search folders are always excluded. Only mail items are eligible;
+      included non-mail containers permit traversal to mail subfolders.
+      Returns plain metadata; callers reopen selected folders by EntryID and
+      StoreID. The entire plan must be collected successfully before mutation.
+    .PARAMETER Namespace
+      Connected Outlook MAPI namespace.
+    .PARAMETER StoreRoot
+      Root folder of the selected store, owned by the caller.
+    .PARAMETER FolderName
+      Exact store-relative path when explicitly supplied. Empty selects the root.
+      When omitted, selects the store's Inbox by identity regardless of its name.
+      If that identity cannot be resolved, supply an explicit path; no fallback
+      to a name or the store root is attempted.
+    .PARAMETER Recurse
+      Visit descendants of the selected folder.
+    .PARAMETER Include
+      Standard folder kinds permitted within the selected scope. Default Inbox.
+    .PARAMETER Exclusions
+      Exact store-relative folder paths to exclude with their descendants.
+    .PARAMETER ProgressId
+      Progress record identifier used during enumeration.
+    .EXAMPLE
+      PS> Get-OutlookFolderPlan -Namespace $context.Namespace -StoreRoot $root -FolderName Posteingang -Recurse
+    .EXAMPLE
+      PS> Get-OutlookFolderPlan -Namespace $context.Namespace -StoreRoot $root
+      Selects the Inbox by identity, including when localized or renamed.
+  #>
+
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Nested traversal functions read Recurse and ProgressId from the parent scope.')]
+  [CmdletBinding()]
+  param (
+    [Parameter(Mandatory = $true)]
+    [object]
+    $Namespace,
+
+    [Parameter(Mandatory = $true)]
+    [object]
+    $StoreRoot,
+
+    [AllowEmptyString()]
+    [string]
+    $FolderName = 'Inbox',
+
+    [switch]
+    $Recurse,
+
+    [ValidateSet('DeletedItems', 'Outbox', 'SentItems', 'Inbox', 'Calendar', 'Contacts', 'Journal', 'Notes', 'Tasks', 'Drafts', 'AllPublicFolders', 'Conflicts', 'SyncIssues', 'LocalFailures', 'ServerFailures', 'Junk', 'RssFeeds', 'ToDo', 'ManagedEmail', 'SuggestedContacts')]
+    [string[]]
+    $Include = @('Inbox'),
+
+    [string[]]
+    $Exclusions = @(),
+
+    [int]
+    $ProgressId = 0
+  )
+
+  if (@($Exclusions | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+    throw 'Exclusions must contain nonblank store-relative paths.'
+  }
+
+  foreach ($_path in @($FolderName) + @($Exclusions)) {
+    if ($_path -eq '' -and $_path -eq $FolderName) {
+      continue
+    }
+    foreach ($_segment in $_path.Split('\')) {
+      if ([string]::IsNullOrWhiteSpace($_segment) -or $_segment -in @('.', '..')) {
+        throw 'Folder paths must be exact, nonblank store-relative paths. Only FolderName may be empty for the store root.'
+      }
+    }
+  }
+
+  $_identities = @(Get-OutlookStandardFolderIdentity -Namespace $Namespace -StoreRoot $StoreRoot)
+  $_identityById = @{}
+  foreach ($_identity in $_identities) {
+    if ($_identity.State -eq 'Unresolved' -and $_identity.Kind -notin $Include) {
+      throw "Cannot enforce exclusion of '$($_identity.Kind)' on this store and Outlook version. Select a supported store or explicitly include this kind."
+    }
+    if ($_identity.EntryID) {
+      $_identityById[$_identity.EntryID] = $_identity.Kind
+    }
+  }
+
+  $_implicitInboxId = $null
+  if (-not $PSBoundParameters.ContainsKey('FolderName')) {
+    $_inboxIdentities = @($_identities | Where-Object { $_.Kind -eq 'Inbox' })
+    if ($_inboxIdentities.Count -ne 1 -or $_inboxIdentities[0].State -ne 'Resolved' -or
+      [string]::IsNullOrWhiteSpace([string]$_inboxIdentities[0].EntryID) -or
+      $_inboxIdentities[0].StoreID -ne $StoreRoot.StoreID) {
+      throw 'Cannot resolve the selected store Inbox identity. Supply FolderName explicitly.'
+    }
+    $_implicitInboxId = [string]$_inboxIdentities[0].EntryID
+    $_inbox = $null
+    try {
+      $_inbox = $Namespace.GetFolderFromID($_implicitInboxId, [string]$StoreRoot.StoreID)
+      if (-not $_inbox -or $_inbox.StoreID -ne $StoreRoot.StoreID -or $_inbox.EntryID -ne $_implicitInboxId) {
+        throw 'Resolved Inbox does not match the selected store and folder identity.'
+      }
+      $_rootPrefix = ([string]$StoreRoot.FolderPath).TrimEnd('\') + '\'
+      $_inboxPath = [string]$_inbox.FolderPath
+      if (-not $_inboxPath.StartsWith($_rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Resolved Inbox is outside the selected store root.'
+      }
+      $FolderName = $_inboxPath.Substring($_rootPrefix.Length)
+      foreach ($_segment in $FolderName.Split('\')) {
+        if ([string]::IsNullOrWhiteSpace($_segment) -or $_segment -in @('.', '..')) {
+          throw 'Resolved Inbox does not have an exact store-relative folder path.'
+        }
+      }
+    }
+    finally {
+      Remove-ComObject $_inbox
+    }
+    # Walk the resolved path below so exclusions on every ancestor still apply.
+  }
+
+  function Get-FolderDecision {
+    param (
+      [object]
+      $Folder,
+
+      [string]
+      $RelativePath
+    )
+
+    $_kind = $_identityById[[string]$Folder.EntryID]
+    $_reason = $null
+    foreach ($_excluded in $Exclusions) {
+      if ($RelativePath -ieq $_excluded -or $RelativePath.StartsWith($_excluded + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        $_reason = 'CustomExclusion'
+        break
+      }
+    }
+    if (-not $_reason -and $_kind -and $_kind -notin $Include) {
+      $_reason = "StandardFolder:$($_kind):Include$($_kind) required"
+    }
+
+    $_accessor = $Folder.PropertyAccessor
+    try {
+      if ($_accessor.GetProperty('http://schemas.microsoft.com/mapi/proptag/0x36010003') -eq 2) {
+        $_reason = 'SearchFolder'
+      }
+    }
+    finally {
+      Remove-ComObject $_accessor
+    }
+
+    [PSCustomObject]@{
+      EntryID      = [string]$Folder.EntryID
+      StoreID      = [string]$Folder.StoreID
+      FolderPath   = [string]$Folder.FolderPath
+      RelativePath = $RelativePath
+      StandardKind = $_kind
+      Process      = -not [bool]$_reason -and $Folder.DefaultItemType -eq 0
+      Traverse     = -not [bool]$_reason
+      Reason       = if ($_reason) { $_reason } elseif ($Folder.DefaultItemType -ne 0) { 'NonMailContainer' } else { 'Included' }
+    }
+  }
+
+  function Get-FolderTreePlan {
+    param (
+      [object]
+      $Folder,
+
+      [string]
+      $RelativePath
+    )
+
+    Write-Progress -Id $ProgressId -Activity 'Outlook folders' -Status 'Reading folder identities and applying exclusions' -CurrentOperation $Folder.FolderPath
+    $_decision = Get-FolderDecision -Folder $Folder -RelativePath $RelativePath
+    $_decision
+    if (-not $Recurse -or -not $_decision.Traverse) {
+      return
+    }
+
+    $_folders = $Folder.Folders
+    try {
+      for ($_index = 1; $_index -le $_folders.Count; $_index++) {
+        $_child = $_folders.Item($_index)
+        try {
+          $_relative = if ($RelativePath) { $RelativePath + '\' + $_child.Name } else { [string]$_child.Name }
+          Get-FolderTreePlan -Folder $_child -RelativePath $_relative
+        }
+        finally {
+          Remove-ComObject $_child
+        }
+      }
+    }
+    finally {
+      Remove-ComObject $_folders
+    }
+  }
+
+  $_selected = $StoreRoot
+  $_relative = ''
+  try {
+    if ($FolderName -ne '') {
+      foreach ($_segment in $FolderName.Split('\')) {
+        $_next = Get-OutlookSubFolder -ParentFolder $_selected -Name $_segment
+        if (-not $_next) {
+          throw "FolderName '$FolderName' was not found. Use the displayed folder path, for example Posteingang."
+        }
+        if ($_selected -ne $StoreRoot) {
+          Remove-ComObject $_selected
+        }
+        $_selected = $_next
+        $_relative = if ($_relative) { $_relative + '\' + $_selected.Name } else { [string]$_selected.Name }
+        $_decision = Get-FolderDecision -Folder $_selected -RelativePath $_relative
+        if (-not $_decision.Traverse) {
+          throw "Selected folder is excluded by '$($_decision.Reason)' at '$_relative'."
+        }
+      }
+    }
+
+    if ($_implicitInboxId -and $_selected.EntryID -ne $_implicitInboxId) {
+      throw 'Inbox identity changed while resolving its path. Request a new folder plan.'
+    }
+    Get-FolderTreePlan -Folder $_selected -RelativePath $_relative
+  }
+  finally {
+    if ($_selected -ne $StoreRoot) {
+      Remove-ComObject $_selected
+    }
+  }
+}
