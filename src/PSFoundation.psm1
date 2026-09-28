@@ -47,6 +47,7 @@ $publicFunctions = @(
   'Resume-OfficeMigration',
 
   # common.ps1
+  'Resolve-LongPath',
   'New-OperationResult',
   'Add-OperationResult',
   'Write-OperationResultLog',
@@ -75,6 +76,7 @@ $publicFunctions = @(
   'Invoke-ComGarbageCollection',
   'Get-OutlookInstallation',
   'Find-OutlookRepairTool',
+  'Get-OutlookRepairToolInfo',
   'Connect-Outlook',
   'Get-OutlookStoreRoot',
   'Add-OutlookStoreRoot',

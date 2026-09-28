@@ -70,7 +70,7 @@ function Get-OutlookInstallation {
     .DESCRIPTION
       Discovers common Microsoft Office and Microsoft 365 installation roots
       that may contain Outlook.exe or Outlook data-file repair tools such as
-      ScanPST.exe and ScanOST.exe. The function checks App Paths registry
+      ScanPST.exe. The function checks App Paths registry
       entries first, then common Office directory layouts under Program Files.
     .EXAMPLE
       PS> Get-OutlookInstallation
@@ -131,17 +131,15 @@ function Get-OutlookInstallation {
     if ([string]::IsNullOrWhiteSpace($_directory)) { continue }
     if (-not (Test-Path -LiteralPath $_directory -PathType Container)) { continue }
 
-    $_resolvedDirectory = (Resolve-Path -LiteralPath $_directory).ProviderPath
+    $_resolvedDirectory = Resolve-LongPath -LiteralPath $_directory
     if (-not $_seen.Add($_resolvedDirectory)) { continue }
 
     $_outlookPath = Join-Path -Path $_resolvedDirectory -ChildPath 'OUTLOOK.EXE'
     $_scanPstPath = Join-Path -Path $_resolvedDirectory -ChildPath 'SCANPST.EXE'
-    $_scanOstPath = Join-Path -Path $_resolvedDirectory -ChildPath 'SCANOST.EXE'
 
     if (
       -not (Test-Path -LiteralPath $_outlookPath -PathType Leaf) -and
-      -not (Test-Path -LiteralPath $_scanPstPath -PathType Leaf) -and
-      -not (Test-Path -LiteralPath $_scanOstPath -PathType Leaf)
+      -not (Test-Path -LiteralPath $_scanPstPath -PathType Leaf)
     ) {
       continue
     }
@@ -150,59 +148,100 @@ function Get-OutlookInstallation {
       Path        = $_resolvedDirectory
       OutlookPath = if (Test-Path -LiteralPath $_outlookPath -PathType Leaf) { $_outlookPath } else { $null }
       ScanPstPath = if (Test-Path -LiteralPath $_scanPstPath -PathType Leaf) { $_scanPstPath } else { $null }
-      ScanOstPath = if (Test-Path -LiteralPath $_scanOstPath -PathType Leaf) { $_scanOstPath } else { $null }
     }
+  }
+}
+
+function Get-OutlookRepairToolInfo {
+  <#
+    .SYNOPSIS
+      Reads repair-tool metadata and identifies supported ScanPST file targeting.
+    .DESCRIPTION
+      Inspects an existing executable without launching it. Only ScanPST from
+      the Office 16 family at build 16.0.10325.20082 or later is classified as
+      supporting the documented file argument and rescan execution mode.
+      Older, unknown, and explicitly selected other executables remain interactive.
+      SupportsFileArgument is a conservative inference from the executable's
+      version resource, not a runtime capability probe. MSI and Click-to-Run
+      file versions can differ; a false value selects the interactive fallback.
+      The directory name alone is not evidence of command-line support.
+    .PARAMETER LiteralPath
+      Literal path to the repair executable, including a legacy explicit override.
+    .EXAMPLE
+      PS> Get-OutlookRepairToolInfo -LiteralPath 'C:\Program Files\Microsoft Office\root\Office16\SCANPST.EXE'
+  #>
+
+  [OutputType([PSCustomObject])]
+  [CmdletBinding()]
+  param (
+    [Parameter(Mandatory = $true)]
+    [string]
+    $LiteralPath
+  )
+
+  $_path = Resolve-LongPath -LiteralPath $LiteralPath
+  $_file = Get-Item -LiteralPath $_path -ErrorAction Stop
+  if ($_file.PSIsContainer -or $_file.Extension -ne '.exe') {
+    throw 'The repair tool must be an existing .exe file.'
+  }
+
+  $_name = [IO.Path]::GetFileNameWithoutExtension($_path)
+  $_version = $null
+  $_versionInfo = $_file.VersionInfo
+  if ($_versionInfo -and $_versionInfo.FileMajorPart -gt 0) {
+    $_version = [version]('{0}.{1}.{2}.{3}' -f $_versionInfo.FileMajorPart,
+      $_versionInfo.FileMinorPart, $_versionInfo.FileBuildPart, $_versionInfo.FilePrivatePart)
+  }
+  $_supportsFileArgument = $_name -ieq 'SCANPST' -and $null -ne $_version -and
+  $_version.Major -eq 16 -and $_version -ge [version]'16.0.10325.20082'
+
+  [PSCustomObject]@{
+    Name                 = $_name
+    Path                 = $_path
+    InstallationPath     = $_file.DirectoryName
+    FileVersion          = $_version
+    SupportsFileArgument = [bool]$_supportsFileArgument
   }
 }
 
 function Find-OutlookRepairTool {
   <#
     .SYNOPSIS
-      Finds an Outlook data-file repair tool.
+      Finds installed ScanPST repair tools and their targeting capabilities.
     .DESCRIPTION
-      Resolves ScanPST.exe or ScanOST.exe from discovered Outlook installation
-      directories. ScanPST is present in modern Outlook installs; ScanOST exists
-      only in older Outlook versions.
+      Searches Outlook installations, then application executables on PATH.
+      Returned paths use long names and include executable version metadata.
+      Legacy alternatives can be inspected explicitly with Get-OutlookRepairToolInfo.
     .PARAMETER Name
-      Repair tool executable to find.
+      ScanPST is the only automatically discovered repair tool.
     .EXAMPLE
       PS> Find-OutlookRepairTool -Name ScanPST
-    .LINK
-      https://github.com/adnoctem/winkit/lib/interop.ps1
-    .NOTES
-      Author: MVProwess <info@mvprowess.com>
-      License: MIT
   #>
 
   [OutputType([PSCustomObject[]])]
   [CmdletBinding()]
   param (
-    [ValidateSet('ScanPST', 'ScanOST')]
+    [ValidateSet('ScanPST')]
     [string]
     $Name = 'ScanPST'
   )
 
-  $_propertyName = if ($Name -eq 'ScanOST') { 'ScanOstPath' } else { 'ScanPstPath' }
-  $_fileName = if ($Name -eq 'ScanOST') { 'SCANOST.EXE' } else { 'SCANPST.EXE' }
-
+  $_seen = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
   foreach ($_installation in Get-OutlookInstallation) {
-    $_path = $_installation.$_propertyName
-    if ([string]::IsNullOrWhiteSpace($_path)) { continue }
-    if (-not (Test-Path -LiteralPath $_path -PathType Leaf)) { continue }
-
-    [PSCustomObject]@{
-      Name             = $Name
-      Path             = $_path
-      InstallationPath = $_installation.Path
+    $_path = $_installation.ScanPstPath
+    if ([string]::IsNullOrWhiteSpace($_path)) {
+      continue
+    }
+    $_tool = Get-OutlookRepairToolInfo -LiteralPath $_path
+    if ($_seen.Add($_tool.Path)) {
+      $_tool
     }
   }
 
-  $_command = Get-Command -Name $_fileName -ErrorAction SilentlyContinue
-  if ($_command -and (Test-Path -LiteralPath $_command.Source -PathType Leaf)) {
-    [PSCustomObject]@{
-      Name             = $Name
-      Path             = $_command.Source
-      InstallationPath = Split-Path -Path $_command.Source -Parent
+  foreach ($_command in @(Get-Command -Name ($Name + '.exe') -CommandType Application -ErrorAction SilentlyContinue)) {
+    $_tool = Get-OutlookRepairToolInfo -LiteralPath $_command.Source
+    if ($_seen.Add($_tool.Path)) {
+      $_tool
     }
   }
 }

@@ -336,3 +336,43 @@ Describe 'Outlook folder selection plan' {
     { Get-OutlookFolderPlan -Namespace @{} -StoreRoot $script:FolderFixtureRoot -FolderName 'Posteingang\..' } | Should -Throw '*exact*'
   }
 }
+
+
+Describe 'Get-OutlookRepairToolInfo' {
+  It 'classifies executable version <Version> as targeted=<Supported>' -ForEach @(
+    @{ Version = '12.0.6650.5000'; Supported = $false }
+    @{ Version = '16.0.10325.20081'; Supported = $false }
+    @{ Version = '16.0.10325.20082'; Supported = $true }
+    @{ Version = '16.0.19000.20000'; Supported = $true }
+    @{ Version = '17.0.20000.20000'; Supported = $false }
+  ) {
+    InModuleScope PSFoundation -Parameters @{ TestVersion = [version]$Version; Expected = $Supported } {
+      param($TestVersion, $Expected)
+      Mock Resolve-LongPath { 'C:\Long directory\SCANPST.EXE' }
+      Mock Get-Item {
+        [PSCustomObject]@{
+          PSIsContainer = $false
+          Extension     = '.exe'
+          DirectoryName = 'C:\Long directory'
+          VersionInfo   = [PSCustomObject]@{
+            FileMajorPart   = $TestVersion.Major
+            FileMinorPart   = $TestVersion.Minor
+            FileBuildPart   = $TestVersion.Build
+            FilePrivatePart = $TestVersion.Revision
+          }
+        }
+      }
+      $info = Get-OutlookRepairToolInfo -LiteralPath 'C:\LONGDI~1\SCANPST.EXE'
+      $info.Path | Should -Be 'C:\Long directory\SCANPST.EXE'
+      $info.FileVersion | Should -Be $TestVersion
+      $info.SupportsFileArgument | Should -Be $Expected
+    }
+  }
+
+  It 'keeps a versionless explicit executable interactive' {
+    $path = Join-Path $TestDrive 'legacy.exe'
+    [IO.File]::WriteAllText($path, 'not a versioned PE image')
+    $info = Get-OutlookRepairToolInfo -LiteralPath $path
+    $info.SupportsFileArgument | Should -BeFalse
+  }
+}

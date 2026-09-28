@@ -226,3 +226,75 @@ Describe 'ConvertTo-RegistrySettingResult' {
     $results[0].Action | Should -Be 'RemoveValue'
   }
 }
+
+
+Describe 'Write-OperationResultLog path handling' {
+  It 'resolves relative destinations against the PowerShell location' {
+    $nativeRoot = Join-Path $TestDrive 'native'
+    $shellRoot = Join-Path $TestDrive 'shell'
+    $null = [IO.Directory]::CreateDirectory($nativeRoot)
+    $null = [IO.Directory]::CreateDirectory($shellRoot)
+    $previous = [Environment]::CurrentDirectory
+    Push-Location $shellRoot
+    try {
+      [Environment]::CurrentDirectory = $nativeRoot
+      $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+      $path = Write-OperationResultLog -Results @($result) -Path 'review.jsonl'
+      $path | Should -Be (Join-Path $shellRoot 'review.jsonl')
+      Test-Path -LiteralPath $path | Should -BeTrue
+      Test-Path -LiteralPath (Join-Path $nativeRoot 'review.jsonl') | Should -BeFalse
+    }
+    finally {
+      [Environment]::CurrentDirectory = $previous
+      Pop-Location
+    }
+  }
+
+  It 'preserves an existing log when path normalization fails' {
+    $path = Join-Path $TestDrive 'existing.jsonl'
+    [IO.File]::WriteAllText($path, 'original content')
+    Mock Resolve-LongPath { throw 'Synthetic path expansion failure' }
+    $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+    { Write-OperationResultLog -Results @($result) -Path $path } | Should -Throw '*Synthetic path expansion failure*'
+    [IO.File]::ReadAllText($path) | Should -Be 'original content'
+  }
+
+  It 'creates nested literal directories through a filesystem PSDrive' {
+    $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+    $path = Write-OperationResultLog -Results @($result) -Path 'TestDrive:\new [literal]\nested\results.jsonl'
+    $path | Should -Be (Join-Path $TestDrive 'new [literal]\nested\results.jsonl')
+    (Get-Content -LiteralPath $path | ConvertFrom-Json).Target | Should -Be 'Synthetic'
+  }
+
+  It 'rejects non-filesystem destinations before changing their values' {
+    $env:PSFOUNDATION_TEST_LOG = 'original content'
+    try {
+      $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+      { Write-OperationResultLog -Results @($result) -Path Env:PSFOUNDATION_TEST_LOG } | Should -Throw '*filesystem*'
+      $env:PSFOUNDATION_TEST_LOG | Should -Be 'original content'
+    }
+    finally {
+      Remove-Item Env:PSFOUNDATION_TEST_LOG
+    }
+  }
+}
+
+Describe 'Resolve-LongPath' {
+  It 'resolves an existing literal path containing spaces and brackets' {
+    $directory = Join-Path $TestDrive 'Long directory [literal]'
+    $null = [IO.Directory]::CreateDirectory($directory)
+    $path = Join-Path $directory 'long filename.txt'
+    [IO.File]::WriteAllText($path, 'fixture')
+    Resolve-LongPath -LiteralPath $path | Should -Be $path
+  }
+
+  It 'rejects a missing path without creating it' {
+    $path = Join-Path $TestDrive 'missing.txt'
+    { Resolve-LongPath -LiteralPath $path } | Should -Throw
+    Test-Path -LiteralPath $path | Should -BeFalse
+  }
+
+  It 'rejects non-filesystem provider paths' {
+    { Resolve-LongPath -LiteralPath Env:TEMP } | Should -Throw '*filesystem*'
+  }
+}

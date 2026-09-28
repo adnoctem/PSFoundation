@@ -1,5 +1,69 @@
 ﻿#Requires -Version 5.0
 
+function Resolve-LongPath {
+  <#
+    .SYNOPSIS
+      Resolves an existing filesystem path and expands Windows short-name aliases.
+    .DESCRIPTION
+      Returns an absolute path with its existing long directory and file names.
+      Uses GetLongPathNameW on Windows and normal filesystem resolution elsewhere.
+      Does not create files or resolve symlinks to their final targets. Failures
+      are terminating rather than returning a mixture of short and long names.
+    .PARAMETER LiteralPath
+      Existing file or directory path. Wildcards are treated literally.
+    .EXAMPLE
+      PS> Resolve-LongPath -LiteralPath $env:TEMP
+  #>
+
+  [OutputType([string])]
+  [CmdletBinding()]
+  param (
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]
+    $LiteralPath
+  )
+
+  $_resolved = Resolve-Path -LiteralPath $LiteralPath -ErrorAction Stop
+  if ($_resolved.Provider.Name -ne 'FileSystem') {
+    throw 'LiteralPath must identify an existing filesystem item.'
+  }
+  $_path = $_resolved.ProviderPath
+  if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    return $_path
+  }
+
+  if (-not ('PSFoundation.NativePathMethods' -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+namespace PSFoundation {
+  public static class NativePathMethods {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern uint GetLongPathNameW(string path, StringBuilder buffer, uint size);
+  }
+}
+"@ -ErrorAction Stop
+  }
+
+  $_buffer = New-Object Text.StringBuilder 260
+  $_length = [PSFoundation.NativePathMethods]::GetLongPathNameW($_path, $_buffer, $_buffer.Capacity)
+  if ($_length -ge $_buffer.Capacity) {
+    $_buffer = New-Object Text.StringBuilder ([int]$_length + 1)
+    $_length = [PSFoundation.NativePathMethods]::GetLongPathNameW($_path, $_buffer, $_buffer.Capacity)
+  }
+  if ($_length -eq 0) {
+    $_errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    throw (New-Object ComponentModel.Win32Exception($_errorCode, "Cannot expand filesystem path '$_path'."))
+  }
+  if ($_length -ge $_buffer.Capacity) {
+    throw "The path changed while expanding '$_path'. Retry path resolution."
+  }
+
+  return $_buffer.ToString()
+}
+
 function New-OperationResult {
   <#
     .SYNOPSIS
@@ -321,17 +385,29 @@ function Write-OperationResultLog {
   if ([string]::IsNullOrWhiteSpace($Path)) {
     $_tempRoot = if ([string]::IsNullOrWhiteSpace($env:TEMP)) { [System.IO.Path]::GetTempPath() } else { $env:TEMP }
     $_logRoot = Join-Path -Path $_tempRoot -ChildPath 'winkit\logs'
-    if (-not (Test-Path -LiteralPath $_logRoot)) {
-      $null = [System.IO.Directory]::CreateDirectory($_logRoot)
-    }
     $_timestamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $Path = Join-Path -Path $_logRoot -ChildPath "$_safeScriptName-$_timestamp.jsonl"
   }
-  else {
-    $_logRoot = Split-Path -Path $Path -Parent
-    if (-not [string]::IsNullOrWhiteSpace($_logRoot) -and -not (Test-Path -LiteralPath $_logRoot)) {
-      $null = [System.IO.Directory]::CreateDirectory($_logRoot)
+
+  # Resolve against PowerShell's location before passing a path to .NET, whose
+  # process working directory can differ. Normalize before replacing any log.
+  $_provider = $null
+  $_drive = $null
+  $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path, [ref]$_provider, [ref]$_drive)
+  if ($_provider.Name -ne 'FileSystem') {
+    throw 'The operation log path must identify a filesystem file.'
+  }
+  if (Test-Path -LiteralPath $Path) {
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+      throw 'The operation log path must identify a file, not a directory.'
     }
+    $Path = Resolve-LongPath -LiteralPath $Path
+  }
+  else {
+    $_logRoot = [IO.Path]::GetDirectoryName($Path)
+    $null = [System.IO.Directory]::CreateDirectory($_logRoot)
+    $_longRoot = Resolve-LongPath -LiteralPath $_logRoot
+    $Path = Join-Path -Path $_longRoot -ChildPath ([IO.Path]::GetFileName($Path))
   }
 
   $_lines = foreach ($_result in $_results) {
