@@ -1,3 +1,9 @@
+## [1.7.1](https://github.com/adnoctem/PSFoundation/compare/v1.7.0...v1.7.1) (2026-09-28)
+
+### Bug Fixes
+
+* **src:** correct Outlook repair discovery and normalize filesystem paths ([3c5af7e](https://github.com/adnoctem/PSFoundation/commit/3c5af7e98c5c3a7a963b4e10ac0b48c01c5a1ceb))
+
 ## [1.7.0](https://github.com/adnoctem/PSFoundation/compare/v1.6.2...v1.7.0) (2026-09-28)
 
 ### Features
