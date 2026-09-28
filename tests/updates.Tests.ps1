@@ -80,6 +80,51 @@ Describe 'Windows Update provider boundaries' {
   }
 }
 
+Describe 'Imported Store update collection handling' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+    $script:hasWinRtMetadata = $false
+    try {
+      [Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallItem, Windows.ApplicationModel.Store.Preview, ContentType = WindowsRuntime] | Out-Null
+      $script:hasWinRtMetadata = $true
+    }
+    catch { Write-Verbose 'Windows Runtime metadata is unavailable; Store collection tests will be skipped.' }
+  }
+
+  It 'returns <Number> mocked Store updates without assuming a collection survives the pipeline' -ForEach @(
+    @{ Number = 0 }, @{ Number = 1 }, @{ Number = 2 }
+  ) {
+    if (-not $script:hasWinRtMetadata) {
+      Set-ItResult -Skipped -Because 'Windows Runtime metadata is unavailable in this engine.'
+      return
+    }
+    $script:storeItems = @(for ($i = 0; $i -lt $Number; $i++) {
+        [PSCustomObject]@{
+          PackageFamilyName     = "Synthetic$i"
+          ProductId             = "Product$i"
+          ItemKind              = 'App'
+          ErrorCode             = 0
+          InstallType           = 'Update'
+          CompletedInstallCount = 0
+          TotalInstallCount     = 1
+        }
+      })
+    Mock _getAppInstallManager {
+      $manager = [PSCustomObject]@{}
+      $manager | Add-Member ScriptMethod SearchForUpdatesAsync { 'Synthetic operation' }
+      $manager
+    } -ModuleName PSFoundation
+    Mock _awaitWinRt { $script:storeItems } -ModuleName PSFoundation
+    $result = @(PSFoundation\Get-MSStoreUpdate -ErrorAction Stop)
+    $result.Count | Should -Be $Number
+    for ($i = 0; $i -lt $Number; $i++) {
+      $result[$i].PackageFamilyName | Should -Be "Synthetic$i"
+    }
+    Should -Invoke _awaitWinRt -Times 1 -Exactly -ModuleName PSFoundation
+  }
+}
+
 Describe 'Store update previews' {
   It 'does not initialize WinRT or request an update during WhatIf' {
     Mock _getAppInstallManager { throw 'Must not initialize WinRT' }

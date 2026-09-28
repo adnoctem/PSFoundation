@@ -76,6 +76,7 @@ function Get-PSModule {
 
     .DESCRIPTION
       Lists modules installed at the resolved scope path, filtered by name regex.
+      JSON exports always contain an array, including for zero or one module.
       Uses PSResourceGet on PS7+ whenever available, falling back to PowerShellGet
       on PS5.1.
 
@@ -172,7 +173,7 @@ function Get-PSModule {
     }
   }
 
-  $results = $results | Sort-Object Name, Version
+  $results = @($results | Sort-Object Name, Version)
 
   if ($Path) {
     $resolvedPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
@@ -180,7 +181,7 @@ function Get-PSModule {
     if ($parent -and -not (Test-Path -LiteralPath $parent)) {
       New-Item -Path $parent -ItemType Directory -Force | Out-Null
     }
-    $results | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $resolvedPath -Encoding UTF8
+    ConvertTo-Json -InputObject $results -Depth 3 | Set-Content -LiteralPath $resolvedPath -Encoding UTF8
     Write-Log -Message "Exported $($results.Count) module(s) to $resolvedPath" -Color Green
   }
   else {
@@ -343,8 +344,8 @@ function Remove-PSModule {
 
   foreach ($group in $grouped) {
     $sorted = $group.Group | Sort-Object Version -Descending
-    $keep = $sorted | Select-Object -First $LatestToKeep
-    $remove = $sorted | Select-Object -Skip $LatestToKeep
+    $keep = @($sorted | Select-Object -First $LatestToKeep)
+    $remove = @($sorted | Select-Object -Skip $LatestToKeep)
 
     $latestVersion = $sorted | Select-Object -First 1 | ForEach-Object { $_.Version.ToString() }
     $keepVersions = ($keep | ForEach-Object { $_.Version.ToString() }) -join ', '
@@ -447,7 +448,10 @@ function Add-PSModule {
       throw "Module export file not found: $resolvedFile"
     }
 
-    $moduleList = Get-Content -LiteralPath $resolvedFile -Raw | ConvertFrom-Json
+    # Assign before collecting: Windows PowerShell can otherwise nest a JSON
+    # array inside @(... ConvertFrom-Json). Also accept legacy single objects.
+    $decodedModules = Get-Content -LiteralPath $resolvedFile -Raw | ConvertFrom-Json
+    $moduleList = @(if ($null -ne $decodedModules) { $decodedModules })
 
     foreach ($mod in $moduleList) {
       $modName = $mod.Name

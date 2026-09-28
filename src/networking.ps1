@@ -8,11 +8,11 @@ function Resolve-IPv6PrefixData {
   # and Get-NetworkPrefixCIDR to avoid duplicating the masking logic.
   param([Parameter(Mandatory)][PSCustomObject]$Adapter)
 
-  $addresses = $Adapter.CimConfig.IPAddress
-  $subnets = $Adapter.CimConfig.IPSubnet
+  $addresses = @($Adapter.CimConfig.IPAddress)
+  $subnets = @($Adapter.CimConfig.IPSubnet)
 
   for ($i = 0; $i -lt $addresses.Count; $i++) {
-    if ($addresses[$i] -notmatch ':') { continue }
+    if ($addresses[$i] -notmatch ':' -or $i -ge $subnets.Count -or [string]::IsNullOrWhiteSpace($subnets[$i])) { continue }
 
     $ipv6 = $addresses[$i]
     $sub = $subnets[$i]
@@ -214,12 +214,12 @@ function Get-SubnetMask {
   if ($null -eq $Adapter) { $Adapter = Get-DefaultNetworkAdapter -Required:$Required }
   if ($null -eq $Adapter) { return $null }
 
-  $addresses = $Adapter.CimConfig.IPAddress
-  $subnets = $Adapter.CimConfig.IPSubnet
+  $addresses = @($Adapter.CimConfig.IPAddress)
+  $subnets = @($Adapter.CimConfig.IPSubnet)
   $mask = $null
 
   for ($i = 0; $i -lt $addresses.Count; $i++) {
-    if ($addresses[$i] -notmatch ':') { $mask = $subnets[$i]; break }
+    if ($addresses[$i] -and $addresses[$i] -notmatch ':' -and $i -lt $subnets.Count) { $mask = $subnets[$i]; break }
   }
 
   if ($null -eq $mask) {

@@ -149,9 +149,9 @@ function Write-DistChecksum {
     return
   }
 
-  $archives = Get-ChildItem -LiteralPath $distPath -File |
-    Where-Object { $_.Name -like '*.tar.gz' -or $_.Name -like '*.zip' } |
-    Sort-Object Name
+  $archives = @(Get-ChildItem -LiteralPath $distPath -File |
+      Where-Object { $_.Name -like '*.tar.gz' -or $_.Name -like '*.zip' } |
+      Sort-Object Name)
 
   if ($archives.Count -eq 0) {
     Write-Warning 'No archive files found in dist/. Skipping checksum generation.'
@@ -184,7 +184,7 @@ if ($Prepare) {
   }
 
   $versionInfo = Split-ReleaseVersion -Version $Version
-  $manifestFiles = Get-ChildItem -LiteralPath $srcPath -Filter '*.psd1' -File
+  $manifestFiles = @(Get-ChildItem -LiteralPath $srcPath -Filter '*.psd1' -File)
   if ($manifestFiles.Count -eq 0) {
     throw "No .psd1 module manifest found in: $srcPath"
   }
@@ -269,7 +269,7 @@ if (-not $SkipPublish -and -not $DryRun) {
     throw "Module source directory not found: $srcPath"
   }
 
-  $manifestFiles = Get-ChildItem -LiteralPath $srcPath -Filter '*.psd1' -File
+  $manifestFiles = @(Get-ChildItem -LiteralPath $srcPath -Filter '*.psd1' -File)
   if ($manifestFiles.Count -eq 0) {
     throw "No .psd1 module manifest found in: $srcPath"
   }

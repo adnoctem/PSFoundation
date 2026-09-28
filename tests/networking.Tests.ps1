@@ -10,6 +10,52 @@ BeforeAll {
   . $PSScriptRoot/../src/log.ps1
 }
 
+Describe 'Imported adapter collection handling' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  BeforeEach {
+    Mock Write-Log { } -ModuleName PSFoundation
+  }
+
+  It 'handles absent or unpaired <Family> addresses: <Label>' -ForEach @(
+    @{ Family = 'IPv4'; Label = 'null'; Addresses = $null; Subnets = $null }
+    @{ Family = 'IPv4'; Label = 'empty'; Addresses = @(); Subnets = @() }
+    @{ Family = 'IPv4'; Label = 'missing mask'; Addresses = @('192.0.2.10'); Subnets = @() }
+    @{ Family = 'IPv6'; Label = 'null'; Addresses = $null; Subnets = $null }
+    @{ Family = 'IPv6'; Label = 'empty'; Addresses = @(); Subnets = @() }
+    @{ Family = 'IPv6'; Label = 'missing prefix'; Addresses = @('2001:db8::10'); Subnets = @() }
+  ) {
+    $adapter = [PSCustomObject]@{ Name = 'Synthetic'; CimConfig = [PSCustomObject]@{ IPAddress = $Addresses; IPSubnet = $Subnets } }
+    if ($Family -eq 'IPv4') {
+      PSFoundation\Get-SubnetMask -Adapter $adapter | Should -BeNullOrEmpty
+      { PSFoundation\Get-SubnetMask -Adapter $adapter -Required } | Should -Throw '*No IPv4 subnet mask*'
+    }
+    else {
+      PSFoundation\Get-NetworkPrefix -Adapter $adapter -AddressFamily IPv6 | Should -BeNullOrEmpty
+      { PSFoundation\Get-NetworkPrefixCIDR -Adapter $adapter -AddressFamily IPv6 -Required } | Should -Throw '*No IPv6 address*'
+    }
+  }
+
+  It 'keeps address/subnet positions for <Label>' -ForEach @(
+    @{ Label = 'one IPv4'; Addresses = '192.0.2.10'; Subnets = '255.255.255.0'; Family = 'IPv4'; Expected = '255.255.255.0' }
+    @{ Label = 'one IPv6'; Addresses = '2001:db8::10'; Subnets = '64'; Family = 'IPv6'; Expected = '2001:db8::/64' }
+    @{ Label = 'mixed addresses'; Addresses = @('192.0.2.10', '2001:db8::10'); Subnets = @('255.255.255.0', '64'); Family = 'IPv6'; Expected = '2001:db8::/64' }
+    @{ Label = 'null slot'; Addresses = @($null, '192.0.2.10'); Subnets = @('255.0.0.0', '255.255.255.0'); Family = 'IPv4'; Expected = '255.255.255.0' }
+    @{ Label = 'zero prefix'; Addresses = @('2001:db8::10'); Subnets = @(0); Family = 'IPv6'; Expected = '::/0' }
+  ) {
+    $adapter = [PSCustomObject]@{ Name = 'Synthetic'; CimConfig = [PSCustomObject]@{ IPAddress = $Addresses; IPSubnet = $Subnets } }
+    if ($Family -eq 'IPv4') {
+      PSFoundation\Get-SubnetMask -Adapter $adapter -Required | Should -Be $Expected
+    }
+    else {
+      PSFoundation\Get-NetworkPrefixCIDR -Adapter $adapter -AddressFamily IPv6 -Required | Should -Be $Expected
+    }
+  }
+}
+
 Describe 'Test-IPv4Address' {
   Context 'valid addresses' {
     It 'accepts standard private address' {

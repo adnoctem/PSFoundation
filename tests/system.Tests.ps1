@@ -8,6 +8,57 @@ BeforeAll {
   . $PSScriptRoot/../src/system.ps1
 }
 
+Describe 'Imported drive mapping collection handling' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  BeforeEach {
+    Mock Test-Elevation { $true } -ModuleName PSFoundation
+    Mock Get-ItemProperty {
+      param($Name)
+      if ($Name) { [PSCustomObject]@{ 'Z:' = '\??\C:\Synthetic' } }
+      else { $script:remainingMappings }
+    } -ModuleName PSFoundation
+    Mock Remove-ItemProperty { } -ModuleName PSFoundation
+    Mock Test-Path { $false } -ModuleName PSFoundation
+    Mock Remove-Item { } -ModuleName PSFoundation
+    Mock Set-Volume { } -ModuleName PSFoundation
+    Mock Restart-Computer { } -ModuleName PSFoundation
+  }
+
+  It 'treats a null optional edition filter as no filter' {
+    Mock Get-OSBuildNumber { 22621 } -ModuleName PSFoundation
+    Mock Get-OSEdition { throw 'No edition lookup expected' } -ModuleName PSFoundation
+    PSFoundation\Test-HostApplicability -Edition $null | Should -BeTrue
+    Should -Invoke Get-OSEdition -Times 0 -Exactly -ModuleName PSFoundation
+  }
+
+  It 'completes cleanup with <Number> related mappings remaining' -ForEach @(
+    @{ Number = 0 }, @{ Number = 1 }, @{ Number = 2 }
+  ) {
+    $mapping = @{ PSPath = 'Synthetic'; 'W:' = '\??\D:\Unrelated' }
+    if ($Number -ge 1) { $mapping['X:'] = '\??\C:\Other1' }
+    if ($Number -ge 2) { $mapping['Y:'] = '\??\C:\Other2' }
+    $script:remainingMappings = [PSCustomObject]$mapping
+    $result = PSFoundation\Remove-DriveMapping -DriveLetter Z -SourceDriveLabel Synthetic -Confirm:$false
+    $result.Status | Should -Be Completed
+    Should -Invoke Remove-ItemProperty -Times 1 -Exactly -ModuleName PSFoundation -ParameterFilter { $Name -eq 'Z:' }
+    $expected = if ($Number -eq 0) { 1 } else { 0 }
+    Should -Invoke Set-Volume -Times $expected -Exactly -ModuleName PSFoundation -ParameterFilter {
+      $DriveLetter -eq 'C' -and $NewFileSystemLabel -eq 'Synthetic'
+    }
+    Should -Invoke Restart-Computer -Times 0 -Exactly -ModuleName PSFoundation
+  }
+
+  It 'keeps mapping previews free of registry and volume writes' {
+    (PSFoundation\Remove-DriveMapping -DriveLetter Z -SourceDriveLabel Synthetic -WhatIf).Status | Should -Be DryRun
+    Should -Invoke Remove-ItemProperty -Times 0 -Exactly -ModuleName PSFoundation
+    Should -Invoke Set-Volume -Times 0 -Exactly -ModuleName PSFoundation
+  }
+}
+
 Describe 'Get-HostPrerequisiteReport' {
   BeforeEach {
     Mock Get-OSBuildNumber { 22621 }
@@ -150,13 +201,9 @@ Describe 'Get-DotNetVersion' {
 
 Describe 'New-DriveMapping' {
   It 'rejects a drive letter that is a physical volume' {
-    $physical = (Get-Volume | Where-Object { $_.DriveLetter } | Select-Object -First 1).DriveLetter
-    if (-not $physical) {
-      { New-DriveMapping -DriveLetter 'C' -Path "$env:TEMP" } | Should -Throw
-    }
-    else {
-      { New-DriveMapping -DriveLetter $physical -Path "$env:TEMP" } | Should -Throw
-    }
+    Mock Test-Elevation { $true }
+    Mock Get-Volume { [PSCustomObject]@{ DriveLetter = 'C' } }
+    { New-DriveMapping -DriveLetter 'C' -Path "$env:TEMP" } | Should -Throw '*physical volume*'
   }
 
   It 'rejects a root-level folder path' {

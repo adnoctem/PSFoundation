@@ -598,7 +598,7 @@ function Get-MSStoreUpdate {
   try {
     $mgr = _getAppInstallManager
     $searchOp = $mgr.SearchForUpdatesAsync()
-    $appUpdates = _awaitWinRt $searchOp ([System.Collections.Generic.IReadOnlyList[Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallItem]])
+    $appUpdates = @(_awaitWinRt $searchOp ([System.Collections.Generic.IReadOnlyList[Windows.ApplicationModel.Store.Preview.InstallControl.AppInstallItem]]))
 
     if (-not $appUpdates -or $appUpdates.Count -eq 0) {
       return @()

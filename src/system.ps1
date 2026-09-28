@@ -618,7 +618,7 @@ function Test-HostApplicability {
     return $false
   }
 
-  if ($PSBoundParameters.ContainsKey('Edition') -and $Edition.Count -gt 0) {
+  if ($PSBoundParameters.ContainsKey('Edition') -and $null -ne $Edition -and $Edition.Count -gt 0) {
     $currentEdition = Get-OSEdition
     if ($currentEdition -notin $Edition) {
       return $false
@@ -1153,8 +1153,8 @@ function Remove-DriveMapping {
     Remove-Item -LiteralPath "$driveIconsKey\$DriveLetter" -Recurse -Force
   }
 
-  $relatedMappings = (Get-ItemProperty -LiteralPath $dosDevicesKey).PSObject.Properties |
-    Where-Object { $_.Name -match '^[A-Z]:$' -and $_.Value -match "^\\\?\?\\$sourceLetter`:\\" }
+  $relatedMappings = @((Get-ItemProperty -LiteralPath $dosDevicesKey).PSObject.Properties |
+      Where-Object { $_.Name -match '^[A-Z]:$' -and $_.Value -match "^\\\?\?\\$sourceLetter`:\\" })
 
   if ($Force -or $relatedMappings.Count -eq 0) {
     if (Test-Path -LiteralPath "$driveIconsKey\$sourceLetter") {

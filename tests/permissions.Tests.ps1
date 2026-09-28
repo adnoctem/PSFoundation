@@ -10,6 +10,35 @@ BeforeAll {
   . $PSScriptRoot/../src/permissions.ps1
 }
 
+Describe 'Imported credential file collection handling' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  It 'rejects <Number> lines with the intended malformed-file error' -ForEach @(@{ Number = 0 }, @{ Number = 1 }) {
+    $path = Join-Path $TestDrive 'malformed.txt'
+    $keyPath = Join-Path $TestDrive 'key.txt'
+    $content = if ($Number -eq 1) { 'SyntheticUser' } else { '' }
+    Set-Content -LiteralPath $path -Value $content -NoNewline
+    Set-Content -LiteralPath $keyPath -Value 'UnusedSyntheticKey'
+    { PSFoundation\Get-EncryptedCredentialFile -Path $path -KeyPath $keyPath } | Should -Throw '*malformed*'
+  }
+
+  It 'reads a valid two-line encrypted credential' {
+    $path = Join-Path $TestDrive 'credential.txt'
+    $keyPath = Join-Path $TestDrive 'key.txt'
+    $key = [byte[]](1..32)
+    $secret = ConvertTo-SecureString 'Synthetic-only' -AsPlainText -Force
+    $blob = ConvertFrom-SecureString $secret -Key $key
+    @('SyntheticUser', $blob) | Set-Content -LiteralPath $path
+    [Convert]::ToBase64String($key) | Set-Content -LiteralPath $keyPath
+    $credential = PSFoundation\Get-EncryptedCredentialFile -Path $path -KeyPath $keyPath
+    $credential.UserName | Should -Be SyntheticUser
+    $credential.GetNetworkCredential().Password | Should -Be 'Synthetic-only'
+  }
+}
+
 Describe 'Test-Elevation' {
   It 'returns a boolean on Windows' {
     $result = Test-Elevation

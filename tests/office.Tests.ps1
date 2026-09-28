@@ -35,6 +35,35 @@ BeforeAll {
   }
 }
 
+Describe 'Imported Office nullable collections' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  BeforeEach {
+    $script:countTarget = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Language de-de -Version 16.0.10417.20208
+    $script:countInventory = New-TestOfficeInventory $script:countTarget
+    $script:countInventory | Add-Member -NotePropertyName VerificationLimitations -NotePropertyValue @()
+    Mock Get-OfficeInventory { $script:countInventory } -ModuleName PSFoundation
+  }
+
+  It 'reports unknown installed languages through the intended locale error' {
+    $script:countInventory.Products[0].Languages = $null
+    { PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -AutoSourceLocales } |
+      Should -Throw '*Supply Language explicitly*'
+  }
+
+  It 'treats null optional plan selections as empty rather than granting removal authority' {
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Install -Configuration $script:countTarget -RemoveProductId $null -Language $null
+    $plan.RemoveProductId.Count | Should -Be 0
+    $plan.Language.Count | Should -Be 0
+    $plan.RemoveMsi | Should -BeFalse
+    $plan.Eligible | Should -BeTrue
+    $plan.State | Should -Be Compliant
+  }
+}
+
 Describe 'Office configuration and authority contracts' {
   BeforeEach {
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Version 16.0.17932.20162

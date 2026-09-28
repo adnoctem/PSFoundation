@@ -51,13 +51,13 @@
   $cutoffDate = if ($Date -is [datetime]) { $Date } else { Get-Date $Date }
   Write-Log -Message "Filtering Defender threat detections since $($cutoffDate.ToString('yyyy-MM-dd HH:mm:ss'))" -Color Yellow
 
-  $detections = Get-MpThreatDetection | Where-Object { $_.InitialDetectionTime -ge $cutoffDate }
+  $detections = @(Get-MpThreatDetection | Where-Object { $_.InitialDetectionTime -ge $cutoffDate })
 
   if ($IncludeURLs -and $detections.Count -gt 0) {
-    $detections = $detections | ForEach-Object {
-      $_urlName = if ($_.PSObject.Properties.Name -contains 'ThreatName') { $_.ThreatName } else { $_.Name }
-      $_ | Add-Member -NotePropertyName 'ThreatDescriptionURL' -NotePropertyValue (Get-DefenderThreatDescriptionURL -ThreatName $_urlName) -PassThru
-    }
+    $detections = @($detections | ForEach-Object {
+        $_urlName = if ($_.PSObject.Properties.Name -contains 'ThreatName') { $_.ThreatName } else { $_.Name }
+        $_ | Add-Member -NotePropertyName 'ThreatDescriptionURL' -NotePropertyValue (Get-DefenderThreatDescriptionURL -ThreatName $_urlName) -PassThru
+      })
     Write-Log -Message '  -> ThreatDescriptionURL(s) appended' -Color Gray
   }
   Write-Log -Message "  -> $($detections.Count) detection(s) found" -Color Gray
@@ -122,13 +122,13 @@ function Get-DefenderThreat {
 
   Write-Log -Message 'Retrieving Microsoft Defender threat catalog' -Color Yellow
 
-  $threats = Get-MpThreat
+  $threats = @(Get-MpThreat)
 
   if ($IncludeURLs -and $threats.Count -gt 0) {
-    $threats = $threats | ForEach-Object {
-      $_urlName = if ($_.PSObject.Properties.Name -contains 'ThreatName') { $_.ThreatName } else { $_.Name }
-      $_ | Add-Member -NotePropertyName 'ThreatDescriptionURL' -NotePropertyValue (Get-DefenderThreatDescriptionURL -ThreatName $_urlName) -PassThru
-    }
+    $threats = @($threats | ForEach-Object {
+        $_urlName = if ($_.PSObject.Properties.Name -contains 'ThreatName') { $_.ThreatName } else { $_.Name }
+        $_ | Add-Member -NotePropertyName 'ThreatDescriptionURL' -NotePropertyValue (Get-DefenderThreatDescriptionURL -ThreatName $_urlName) -PassThru
+      })
     Write-Log -Message '  -> ThreatDescriptionURL(s) appended' -Color Gray
   }
   Write-Log -Message "  -> $($threats.Count) threat(s) found" -Color Gray
@@ -428,20 +428,20 @@ function Find-NewlyWrittenObject {
   Write-Log -Message "Searching for files written between $($windowStart.ToString('yyyy-MM-dd HH:mm:ss')) and $($windowEnd.ToString('yyyy-MM-dd HH:mm:ss'))" -Color Yellow
   Write-Log -Message "  Root path: $Path" -Color Gray
 
-  $items = Get-ChildItem -LiteralPath $Path -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { -not $_.PSIsContainer -and $_.LastWriteTime -gt $windowStart -and $_.LastWriteTime -lt $windowEnd } |
-    Sort-Object LastWriteTime |
-    Select-Object LastWriteTime,
-    LastWriteTimeUtc,
-    LastAccessTime,
-    LastAccessTimeUtc,
-    CreationTime,
-    CreationTimeUtc,
-    Mode,
-    IsReadOnly,
-    Length,
-    Extension,
-    FullName
+  $items = @(Get-ChildItem -LiteralPath $Path -Recurse -ErrorAction SilentlyContinue |
+      Where-Object { -not $_.PSIsContainer -and $_.LastWriteTime -gt $windowStart -and $_.LastWriteTime -lt $windowEnd } |
+      Sort-Object LastWriteTime |
+      Select-Object LastWriteTime,
+      LastWriteTimeUtc,
+      LastAccessTime,
+      LastAccessTimeUtc,
+      CreationTime,
+      CreationTimeUtc,
+      Mode,
+      IsReadOnly,
+      Length,
+      Extension,
+      FullName)
 
   Write-Log -Message "  -> $($items.Count) file(s) found" -Color Gray
 

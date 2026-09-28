@@ -11,6 +11,54 @@ BeforeAll {
   $config = Import-SecurityEventConfiguration -Path (Join-Path $PSScriptRoot '../src/security.psd1') -Force
 }
 
+Describe 'Imported security inventory cardinality' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  BeforeEach {
+    Mock Write-Log { } -ModuleName PSFoundation
+    Mock Get-MpThreat { $script:threatRecords } -ModuleName PSFoundation
+    Mock Get-MpThreatDetection { $script:threatRecords } -ModuleName PSFoundation
+  }
+
+  It 'handles <Number> <Command> results with URL enrichment <Enrich>' -ForEach @(
+    @{ Number = 0; Command = 'Get-DefenderThreat'; Enrich = $false }
+    @{ Number = 1; Command = 'Get-DefenderThreat'; Enrich = $false }
+    @{ Number = 2; Command = 'Get-DefenderThreat'; Enrich = $false }
+    @{ Number = 0; Command = 'Get-DefenderThreat'; Enrich = $true }
+    @{ Number = 1; Command = 'Get-DefenderThreat'; Enrich = $true }
+    @{ Number = 2; Command = 'Get-DefenderThreat'; Enrich = $true }
+    @{ Number = 0; Command = 'Get-DefenderThreatDetection'; Enrich = $false }
+    @{ Number = 1; Command = 'Get-DefenderThreatDetection'; Enrich = $false }
+    @{ Number = 2; Command = 'Get-DefenderThreatDetection'; Enrich = $false }
+    @{ Number = 0; Command = 'Get-DefenderThreatDetection'; Enrich = $true }
+    @{ Number = 1; Command = 'Get-DefenderThreatDetection'; Enrich = $true }
+    @{ Number = 2; Command = 'Get-DefenderThreatDetection'; Enrich = $true }
+  ) {
+    $script:threatRecords = @(for ($i = 0; $i -lt $Number; $i++) {
+        [PSCustomObject]@{ ThreatName = "Synthetic$i"; InitialDetectionTime = (Get-Date).AddDays(1) }
+      })
+    & "PSFoundation\$Command" -IncludeURLs:$Enrich | Out-Null
+    Should -Invoke Write-Log -Times 1 -ModuleName PSFoundation -ParameterFilter { $Message -like "*-> $Number * found" }
+    if ($Enrich) {
+      foreach ($record in $script:threatRecords) {
+        $record.ThreatDescriptionURL | Should -Match '^https://'
+      }
+    }
+  }
+
+  It 'finds and counts <Number> matching files' -ForEach @(@{ Number = 0 }, @{ Number = 1 }, @{ Number = 3 }) {
+    $script:recentFiles = @(for ($i = 0; $i -lt $Number; $i++) {
+        [PSCustomObject]@{ PSIsContainer = $false; LastWriteTime = [datetime]'2026-01-01T12:00:00'; FullName = "C:\Synthetic\$i.txt" }
+      })
+    Mock Get-ChildItem { $script:recentFiles } -ModuleName PSFoundation
+    PSFoundation\Find-NewlyWrittenObject -Path $TestDrive -Date ([datetime]'2026-01-01T12:00:00') | Out-Null
+    Should -Invoke Write-Log -Times 1 -ModuleName PSFoundation -ParameterFilter { $Message -like "*-> $Number file(s) found" }
+  }
+}
+
 Describe 'Invoke-SafeProcess' {
   BeforeAll {
     $nativeFixture = Join-Path $TestDrive 'NativeProcess.exe'

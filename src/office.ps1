@@ -777,7 +777,7 @@ function New-OfficeDeploymentConfiguration {
       }
       $found = $inventory.Products[0]
     }
-    if (-not $found.PrimaryLanguage -or -not $found.Languages.Count -or $found.PrimaryLanguage -notin $found.Languages) {
+    if (-not $found.PrimaryLanguage -or $null -eq $found.Languages -or -not $found.Languages.Count -or $found.PrimaryLanguage -notin $found.Languages) {
       Stop-PSFOfficeOperation LocaleDiscoveryFailed 'No unambiguous primary Office language was observed. Supply Language explicitly.'
     }
     $Language = @($found.PrimaryLanguage) + @($found.Languages | Where-Object { $_ -ne $found.PrimaryLanguage })
@@ -1418,6 +1418,8 @@ function Get-OfficeDeploymentPlan {
   if ($PilotMigration -and $Action -ne 'Migrate') {
     Stop-PSFOfficeOperation InvalidAuthority 'PilotMigration belongs only to Migrate.'
   }
+  if ($null -eq $RemoveProductId) { $RemoveProductId = @() }
+  if ($null -eq $Language) { $Language = @() }
   if ($Action -notin @('Remove', 'Migrate') -and ($RemoveProductId.Count -or $RemoveMsi)) {
     Stop-PSFOfficeOperation InvalidAuthority 'This action cannot remove products.'
   }
@@ -2191,6 +2193,8 @@ function New-PSFOfficeXml {
     $Settings = @{}
   )
 
+  if ($null -eq $RemoveProductId) { $RemoveProductId = @() }
+  if ($null -eq $Language) { $Language = @() }
   if (($Action -notin @('Remove', 'Migrate') -and ($RemoveProductId.Count -or $RemoveMsi)) -or
     ($Action -eq 'Remove' -and $RemoveMsi)) {
     Stop-PSFOfficeOperation InvalidAuthority 'XML operation cannot contain the requested removal.'

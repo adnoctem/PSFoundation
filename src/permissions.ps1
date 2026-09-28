@@ -699,7 +699,7 @@ function Get-EncryptedCredentialFile {
     throw "Key file not found: $KeyPath"
   }
 
-  $lines = Get-Content -LiteralPath $Path
+  $lines = @(Get-Content -LiteralPath $Path)
   if ($lines.Count -lt 2) {
     throw "Credential file '$Path' is malformed (expected a username line and an encrypted blob line)."
   }
