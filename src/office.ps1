@@ -1720,13 +1720,17 @@ function Test-OfficeDeploymentTool {
     .SYNOPSIS
       Verifies the signature, identity, and minimum version of ODT setup.exe.
     .DESCRIPTION
-      Does not execute or download the tool. Missing or untrusted files return an
-      invalid assessment. A valid signature must identify Microsoft Corporation.
+      Does not execute or download the tool. Requires a valid Microsoft
+      Corporation signature and a recognized Office executable identity.
+      Current ODT uses Bootstrapper.exe as its embedded original filename;
+      the filename on disk is not that version-resource field.
+      Invalid assessments retain UntrustedTool and explain the failed check.
     .PARAMETER OdtPath
       Existing Office Deployment Tool setup.exe.
     .EXAMPLE
       Test-OfficeDeploymentTool -OdtPath C:\Tools\ODT\setup.exe
   #>
+
   [CmdletBinding()]
   [OutputType([PSCustomObject])]
   param (
@@ -1738,29 +1742,66 @@ function Test-OfficeDeploymentTool {
   $valid = $false
   $version = $null
   $reason = 'UntrustedTool'
+  $detail = $null
+  $signatureStatus = $null
+  $info = $null
   try {
     Assert-PSFOfficePath $OdtPath
+    $file = Get-Item -LiteralPath $OdtPath -ErrorAction Stop
+    if ($file.PSIsContainer -or $file.Extension -ne '.exe') {
+      throw 'OdtPath must identify an existing executable file.'
+    }
+
     $signature = Get-AuthenticodeSignature -LiteralPath $OdtPath -ErrorAction Stop
-    $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($OdtPath)
-    $version = $info.FileVersion
-    $valid = ($signature.Status -eq 'Valid' -and
-      $signature.SignerCertificate.Subject -match '(?:^|,\s*)O=Microsoft Corporation(?:,|$)' -and
-      $info.OriginalFilename -eq 'setup.exe' -and
-      $info.FileDescription -match 'Office.*(Deployment|Click-to-Run)' -and
-      [version]$version -ge [version]'16.0.12827.20258')
-    if ($valid) {
+    $signatureStatus = [string]$signature.Status
+    $info = $file.VersionInfo
+    $version = '{0}.{1}.{2}.{3}' -f $info.FileMajorPart, $info.FileMinorPart,
+    $info.FileBuildPart, $info.FilePrivatePart
+
+    # Keep the established identity and recognize the current Microsoft ODT
+    # tuple. Neither a setup.exe filename nor an Office description alone is
+    # sufficient. The trusted publisher check applies to both identities.
+    $legacyIdentity = $info.OriginalFilename -eq 'setup.exe' -and
+    $info.FileDescription -match 'Office.*(Deployment|Click-to-Run)'
+    $bootstrapperIdentity = $info.OriginalFilename -eq 'Bootstrapper.exe' -and
+    $info.FileDescription -eq 'Microsoft 365 and Office' -and
+    $info.ProductName -eq 'Microsoft Office' -and
+    $info.CompanyName -eq 'Microsoft Corporation'
+
+    if ($signature.Status -ne 'Valid') {
+      $detail = "ODT Authenticode signature is not valid (status: $signatureStatus)."
+    }
+    elseif (-not $signature.SignerCertificate -or
+      $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)') {
+      $detail = 'ODT signer is not Microsoft Corporation.'
+    }
+    elseif (-not ($legacyIdentity -or $bootstrapperIdentity)) {
+      $detail = "Unrecognized ODT identity: OriginalFilename='$($info.OriginalFilename)', FileDescription='$($info.FileDescription)', ProductName='$($info.ProductName)', CompanyName='$($info.CompanyName)'. Use the extracted Office Deployment Tool setup.exe."
+    }
+    elseif ([version]$version -lt [version]'16.0.12827.20258') {
+      $detail = "ODT version $version is below the supported minimum 16.0.12827.20258."
+    }
+    else {
+      $valid = $true
       $reason = $null
     }
   }
   catch {
-    $valid = $false
+    $detail = $_.Exception.Message
   }
+
   [PSCustomObject]@{
-    Valid      = $valid
-    Path       = $OdtPath
-    Version    = $version
-    ReasonCode = $reason
-    Modes      = @('Download', 'Configure', 'Customize', 'Help')
+    Valid            = $valid
+    Path             = $OdtPath
+    Version          = $version
+    ReasonCode       = $reason
+    Detail           = $detail
+    SignatureStatus  = $signatureStatus
+    OriginalFilename = if ($info) { $info.OriginalFilename } else { $null }
+    FileDescription  = if ($info) { $info.FileDescription } else { $null }
+    ProductName      = if ($info) { $info.ProductName } else { $null }
+    CompanyName      = if ($info) { $info.CompanyName } else { $null }
+    Modes            = @('Download', 'Configure', 'Customize', 'Help')
   }
 }
 

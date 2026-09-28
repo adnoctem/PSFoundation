@@ -1006,3 +1006,104 @@ Describe 'Office preparation and acquisition boundaries' {
     Should -Invoke New-PSFOfficeProtectedDirectory -Times 0
   }
 }
+
+Describe 'Office Deployment Tool executable identity' {
+  BeforeEach {
+    $script:odtMetadata = [PSCustomObject]@{
+      OriginalFilename = 'Bootstrapper.exe'
+      FileDescription  = 'Microsoft 365 and Office'
+      ProductName      = 'Microsoft Office'
+      CompanyName      = 'Microsoft Corporation'
+      FileVersion      = 'Localized version text is not used'
+      FileMajorPart    = 16
+      FileMinorPart    = 0
+      FileBuildPart    = 20326
+      FilePrivatePart  = 20112
+    }
+    $script:odtSignature = [PSCustomObject]@{
+      Status            = 'Valid'
+      SignerCertificate = [PSCustomObject]@{ Subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, C=US' }
+    }
+    Mock Assert-PSFOfficePath { }
+    Mock Get-Item {
+      [PSCustomObject]@{ PSIsContainer = $false; Extension = '.exe'; VersionInfo = $script:odtMetadata }
+    }
+    Mock Get-AuthenticodeSignature { $script:odtSignature }
+    Mock Invoke-SafeProcess { throw 'Validation must not execute the file' }
+    Mock Invoke-WebRequest { throw 'Validation must not download' }
+  }
+
+  It 'accepts the current Microsoft ODT metadata without requiring its on-disk filename internally' {
+    $result = Test-OfficeDeploymentTool -OdtPath 'C:\ODT\setup.exe'
+    $result.Valid | Should -BeTrue
+    $result.Version | Should -Be '16.0.20326.20112'
+    $result.OriginalFilename | Should -Be 'Bootstrapper.exe'
+    $result.SignatureStatus | Should -Be Valid
+    $result.ReasonCode | Should -BeNullOrEmpty
+    $result.Detail | Should -BeNullOrEmpty
+    Should -Invoke Invoke-SafeProcess -Times 0
+    Should -Invoke Invoke-WebRequest -Times 0
+  }
+
+  It 'retains the established identity and minimum supported build' {
+    $script:odtMetadata.OriginalFilename = 'setup.exe'
+    $script:odtMetadata.FileDescription = 'Microsoft Office Deployment Tool'
+    $script:odtMetadata.FileBuildPart = 12827
+    $script:odtMetadata.FilePrivatePart = 20258
+    (Test-OfficeDeploymentTool -OdtPath 'C:\ODT\setup.exe').Valid | Should -BeTrue
+  }
+
+  It 'rejects an invalid signature even when all metadata matches' -ForEach @(
+    @{ SignatureStatus = 'NotSigned' }
+    @{ SignatureStatus = 'HashMismatch' }
+    @{ SignatureStatus = 'NotTrusted' }
+    @{ SignatureStatus = 'UnknownError' }
+  ) {
+    $script:odtSignature.Status = $SignatureStatus
+    $result = Test-OfficeDeploymentTool -OdtPath 'C:\ODT\setup.exe'
+    $result.Valid | Should -BeFalse
+    $result.ReasonCode | Should -Be UntrustedTool
+    $result.Detail | Should -Match 'signature is not valid'
+  }
+
+  It 'rejects another publisher or missing signer' -ForEach @(
+    @{ Subject = 'CN=Microsoft Corporation, O=Other Corporation, C=US' }
+    @{ Subject = 'CN=Other, O=Microsoft Corporation Impostor, C=US' }
+    @{ Subject = $null }
+  ) {
+    $script:odtSignature.SignerCertificate = if ($Subject) { [PSCustomObject]@{ Subject = $Subject } } else { $null }
+    $result = Test-OfficeDeploymentTool -OdtPath 'C:\ODT\setup.exe'
+    $result.Valid | Should -BeFalse
+    $result.Detail | Should -Match 'signer'
+  }
+
+  It 'rejects a mismatched bootstrapper identity field <Field>' -ForEach @(
+    @{ Field = 'OriginalFilename'; Value = 'officedeploymenttool.exe' }
+    @{ Field = 'FileDescription'; Value = 'Other Office bootstrapper' }
+    @{ Field = 'ProductName'; Value = 'Other product' }
+    @{ Field = 'CompanyName'; Value = 'Other Corporation' }
+  ) {
+    $script:odtMetadata.$Field = $Value
+    $result = Test-OfficeDeploymentTool -OdtPath 'C:\ODT\setup.exe'
+    $result.Valid | Should -BeFalse
+    $result.Detail | Should -Match 'Unrecognized ODT identity'
+  }
+
+  It 'rejects a build immediately below the supported minimum' {
+    $script:odtMetadata.FileBuildPart = 12827
+    $script:odtMetadata.FilePrivatePart = 20257
+    $result = Test-OfficeDeploymentTool -OdtPath 'C:\ODT\setup.exe'
+    $result.Valid | Should -BeFalse
+    $result.Detail | Should -Match 'below the supported minimum'
+  }
+
+  It 'reports unreadable or missing files without claiming trust' {
+    Mock Get-Item { throw 'Synthetic missing executable' }
+    $result = Test-OfficeDeploymentTool -OdtPath 'C:\ODT\missing.exe'
+    $result.Valid | Should -BeFalse
+    $result.Version | Should -BeNullOrEmpty
+    $result.ReasonCode | Should -Be UntrustedTool
+    $result.Detail | Should -Match 'Synthetic missing executable'
+    Should -Invoke Get-AuthenticodeSignature -Times 0
+  }
+}
