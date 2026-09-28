@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/adnoctem/PSFoundation/compare/v1.6.2...v1.7.0) (2026-09-28)
+
+### Features
+
+* **src:** add identity-based Outlook folder planning ([d11c7b1](https://github.com/adnoctem/PSFoundation/commit/d11c7b13d1294089d91f56042cf949d4c0aeddc7))
+
 ## [1.6.2](https://github.com/adnoctem/PSFoundation/compare/v1.6.1...v1.6.2) (2026-09-28)
 
 ### Bug Fixes
