@@ -3,6 +3,8 @@ extend-exclude = []
 
 [default]
 extend-ignore-identifiers-re = [".*FO*", ".*PnP.*"]
+# Office 2007 Groove MUI component ID inside the migration profile's GUID regex.
+extend-ignore-re = ['\b00BA\b']
 
 [default.extend-identifiers]
 FO = "FO"

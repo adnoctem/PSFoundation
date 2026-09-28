@@ -272,11 +272,11 @@ $recovery | Resume-OfficeInstallation -OdtPath 'C:\Tools\ODT\setup.exe' -WhatIf
 # Migration journals require Resume-OfficeMigration and fresh confirmation of remaining scope.
 ```
 
-**Current validation limits:** the native execution host check is restricted to x64 Windows 11 desktop. Product IDs are deployment
-identifiers, not a claim of current vendor lifecycle support. Routine tests mock ODT and do not certify any real Office installation.
-Standalone MSI removal is unsupported. Recovery supports verification of completed installations, pre-launch continuation, and migration
-continuation after verified Click-to-Run removal. Replaying an uncertain partial installer returns `UnsupportedRecoveryState`; Quick Repair,
-Online Repair, rollback, and journal-free mutation are not implemented.
+**Current validation limits:** ordinary native execution is restricted to x64 Windows 11 desktop. The explicitly scoped pilot below is the
+only Windows 10 exception. Product IDs are deployment identifiers, not a claim of current vendor lifecycle support. Routine tests mock ODT
+and do not certify any real Office installation. Standalone MSI removal is unsupported. Recovery supports verification of completed
+installations, pre-launch continuation, and migration continuation after verified Click-to-Run removal. Replaying an uncertain partial
+installer returns `UnsupportedRecoveryState`; Quick Repair, Online Repair, rollback, and journal-free mutation are not implemented.
 
 Inventory uses Microsoft's documented `ClickToRun\Inventory\Office\16.0` product/build values and preserves incomplete registration and
 resource evidence. It deliberately does **not** promote `VersionToReport`, `ClientCulture`, or per-user language preferences to proof of
@@ -295,6 +295,43 @@ preserves machine language observations. Neither field establishes complete inst
 
 These inventory fields are additive within schema 1. Existing plans must be recreated after inventory changes; execution revalidates current
 observations. Existing recovery journals remain subject to their original authority and the current verification gates.
+
+### Office 2007 migration pilot
+
+`Get-OfficeDeploymentPlan -PilotMigration` and `Switch-OfficeDeployment -PilotMigration` require separate explicit consent for a narrow
+pilot: x64 Windows 10 desktop build 19045, the observed Office Enterprise 2007 MSI suite/resources, and German Standard 2019 volume x64.
+Select `-Language de-de` explicitly and authorize broad removal with `-RemoveMsi`. Automatic installed-language discovery remains strict.
+The plan checks the current host, source registrations, German language evidence, and German/English/French/Italian proofing registrations.
+Other destinations, source products, hosts, unknown inventory, absent consent, and unrelated verification limitations remain blocked.
+
+The reviewed resource intent is stored in `Plan.PilotResources`, separately from full UI languages. German media supplies the intended
+German UI and companion proofing; it does not request English/French/Italian UI packs or use runtime `MatchPreviousMSI`. Microsoft's
+[companion-language table](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/overview-deploying-languages-microsoft-365-apps#companion-proofing-languages)
+lists those four proofing languages for German. Applying that companion set to the selected 2019 package is a pilot assumption to verify on
+the target, not proof of installed resources. See also Microsoft's
+[Office 2019 language deployment](https://learn.microsoft.com/en-us/office/2019/deploy#deploy-languages-for-office-2019).
+
+```powershell
+$target = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de
+# Prepare media explicitly with Save-OfficeDeploymentMedia before planning.
+$plan = Get-OfficeDeploymentPlan -Action Migrate -Configuration $target -SourcePath C:\Media\Office2019 -RemoveMsi -PilotMigration
+$plan | ConvertTo-Json -Depth 30
+$plan | Switch-OfficeDeployment -OdtPath C:\ODT\setup.exe -PilotMigration -WhatIf
+# Execute only after reviewing the plan and establishing the VM rollback point.
+$result = $plan | Switch-OfficeDeployment -OdtPath C:\ODT\setup.exe -PilotMigration -Confirm
+```
+
+Normal signature, media identity/build/hash, staging, disk-space, lock, fresh-inventory, application and pending-reboot checks still apply.
+Successful native execution with unresolved observations returns `AppliedUnverified`, `PilotVerificationRequired`, and wrapper exit **1**.
+Proofing verification always remains manual in this pilot. Native 3010 and `RebootRequired` are preserved separately; unverified exit 1
+takes precedence over 3010. Known mismatches, unexpected inventory, and native errors remain failures. Activation is reported separately.
+Never interpret an unverified result as a retry instruction or fleet readiness.
+
+Pilot plans/journals use schema **2**; ordinary plans/journals remain schema 1, and result/configuration schemas are unchanged.
+`Get-OfficeDeploymentRecovery` can inspect pilot evidence, but resume commands reject it with `UnsupportedPilotRecovery`. Old plans cannot
+gain pilot authority by adding fields. Save the result, protected journal/JSONL, collector report, and relevant ODT logs off the VM before
+reverting its snapshot. ODT logs may contain sensitive data. Verify German UI, all four proofing languages, build, x64 apps, activation,
+retained add-ins, representative documents and the user's Outlook profile manually. No actual Office migration is exercised by unit tests.
 
 The current migration validation target is Office Enterprise 2007 to Standard 2019, 64-bit, with language preservation on Windows 10 x64.
 The Windows 10 execution path, language/proofing preservation, and interrupted-installer recovery still require validation; the execution

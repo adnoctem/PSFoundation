@@ -2,11 +2,13 @@
 
 ### Features
 
-* **src:** add scoped Office deployment APIs ([3efcf90](https://github.com/adnoctem/PSFoundation/commit/3efcf90968ba6c67cc1dbdae03e2e7d4c1aa53c2))
+- **src:** add scoped Office deployment APIs
+  ([3efcf90](https://github.com/adnoctem/PSFoundation/commit/3efcf90968ba6c67cc1dbdae03e2e7d4c1aa53c2))
 
 ### Bug Fixes
 
-* **src:** correct Office inventory and block unverifiable deployments ([a860691](https://github.com/adnoctem/PSFoundation/commit/a8606916f8306bd35eb9aad901a3911850cbd0e0))
+- **src:** correct Office inventory and block unverifiable deployments
+  ([a860691](https://github.com/adnoctem/PSFoundation/commit/a8606916f8306bd35eb9aad901a3911850cbd0e0))
 
 ## [1.5.0](https://github.com/adnoctem/PSFoundation/compare/v1.4.0...v1.5.0) (2026-09-17)
 
