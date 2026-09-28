@@ -1,3 +1,9 @@
+## [1.6.1](https://github.com/adnoctem/PSFoundation/compare/v1.6.0...v1.6.1) (2026-09-28)
+
+### Bug Fixes
+
+* **src:** enable scoped Office 2007 migration pilots ([d47639a](https://github.com/adnoctem/PSFoundation/commit/d47639a79c1b9adcc8a9bceaf1dc7e562cadbe71))
+
 ## [1.6.0](https://github.com/adnoctem/PSFoundation/compare/v1.5.0...v1.6.0) (2026-09-27)
 
 ### Features
