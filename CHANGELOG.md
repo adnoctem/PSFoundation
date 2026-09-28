@@ -1,3 +1,9 @@
+## [1.7.2](https://github.com/adnoctem/PSFoundation/compare/v1.7.1...v1.7.2) (2026-09-28)
+
+### Bug Fixes
+
+* **src:** recognize current Microsoft ODT bootstrapper metadata ([9b3769a](https://github.com/adnoctem/PSFoundation/commit/9b3769a8020b7690ed82a84cdd8b17ee978ac566))
+
 ## [1.7.1](https://github.com/adnoctem/PSFoundation/compare/v1.7.0...v1.7.1) (2026-09-28)
 
 ### Bug Fixes
