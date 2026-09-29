@@ -2,9 +2,12 @@
 
 ### Bug Fixes
 
-* **src:** derive Office builds from active product resource versions ([ce9ff77](https://github.com/adnoctem/PSFoundation/commit/ce9ff7779db4a91fe486840ee0fbb1aa8c7309ab))
-* **src:** retire Office pilot mode and complete ODT provisioning checks ([d40bc2f](https://github.com/adnoctem/PSFoundation/commit/d40bc2fc064a1e8b4092e349f38fffc99d2bb2f0))
-* **src:** support Windows 10 22H2 Office deployments ([525e09d](https://github.com/adnoctem/PSFoundation/commit/525e09d32e935f31e1852bd3fca140fa671ba6f6))
+- **src:** derive Office builds from active product resource versions
+  ([ce9ff77](https://github.com/adnoctem/PSFoundation/commit/ce9ff7779db4a91fe486840ee0fbb1aa8c7309ab))
+- **src:** retire Office pilot mode and complete ODT provisioning checks
+  ([d40bc2f](https://github.com/adnoctem/PSFoundation/commit/d40bc2fc064a1e8b4092e349f38fffc99d2bb2f0))
+- **src:** support Windows 10 22H2 Office deployments
+  ([525e09d](https://github.com/adnoctem/PSFoundation/commit/525e09d32e935f31e1852bd3fca140fa671ba6f6))
 
 ## [1.8.0](https://github.com/adnoctem/PSFoundation/compare/v1.7.5...v1.8.0) (2026-09-29)
 
