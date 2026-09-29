@@ -185,6 +185,26 @@ Describe 'Imported Office sparse registry values' {
     $observed.Unknowns | Should -Contain 'OrphanedOfficePatchRegistration:{90120000-001B-0407-0000-0000000FF1CE}_ENTERPRISER_{DB2ACBD1-65B1-4FC5-881E-4E75C668E7E2}'
   }
 
+  It 'recognizes the natively observed Click-to-Run Licensing Component' {
+    # Product code 007E was observed on a real Standard 2019 Volume install.
+    # The synthetic fixture assumed 008F, so this case could not be reached by
+    # it: misclassification pushed the component into the legacy MSI bucket and
+    # raised a false OtherProducts discrepancy after a successful migration.
+    $script:sparseRegistry = @([PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{90160000-007E-0000-1000-0000000FF1CE}'
+        Values = [PSCustomObject]@{
+          Publisher   = 'Microsoft Corporation'
+          DisplayName = 'Office 16 Click-to-Run Licensing Component'
+        }
+      })
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 0
+    @($observed.RelatedComponents | Where-Object Role -EQ ClickToRunInfrastructure).Count | Should -Be 1
+    $observed.Unknowns | Should -Contain ClickToRunInfrastructureWithoutConfiguration
+  }
+
   It 'does not read Office 2007 App Paths as Click-to-Run residue' {
     $script:sparseRegistry = @(
       [PSCustomObject]@{
@@ -1180,6 +1200,37 @@ Describe 'Office protected files and secret handling' {
     $document.SelectNodes('//*[@PIDKEY]').Count | Should -Be 0
     @(Get-ChildItem -LiteralPath $TestDrive -Filter 'configuration-*.xml').Count | Should -Be 0
     $key.Dispose()
+  }
+
+  It 'names the expected product key shape without echoing the key <Case>' -ForEach @(
+    @{ Case = 'empty from a dropped paste'; Value = '' }
+    @{ Case = 'en-dash separators from a formatted document'; Value = "AAAAA`u{2013}BBBBB`u{2013}CCCCC`u{2013}DDDDD`u{2013}EEEEE" }
+    @{ Case = 'no separators at all'; Value = 'AAAAABBBBBCCCCCDDDDDEEEEE' }
+  ) {
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Version 16.0.17932.20162
+    $document = New-PSFOfficeXml -Action Install -Configuration $target -MediaPath C:\Media
+    $key = New-Object Security.SecureString
+    foreach ($character in $Value.ToCharArray()) {
+      $key.AppendChar($character)
+    }
+
+    try {
+      $message = $null
+      try {
+        Invoke-PSFOfficeConfiguration -OdtPath C:\ODT\setup.exe -Document $document -Directory $TestDrive -ProductKey $key
+      }
+      catch {
+        $message = $_.Exception.Message
+      }
+
+      $message | Should -BeLike '*five groups of five letters or digits separated by ASCII hyphens*'
+      # The rejection must describe the shape, never the supplied value.
+      $message | Should -Not -BeLike '*AAAAA*'
+      $document.SelectNodes('//*[@PIDKEY]').Count | Should -Be 0
+    }
+    finally {
+      $key.Dispose()
+    }
   }
 
   It 'rejects traversal, alternate streams, and cleanup outside the operation root' {

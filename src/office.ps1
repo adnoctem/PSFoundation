@@ -1,5 +1,10 @@
 ﻿#Requires -Version 5.0
 
+# Both product-key validation sites share this text. It states the expected
+# shape so a rejection is self-explanatory, and never echoes the key itself:
+# -AsSecureString masks input, so a truncated paste is otherwise invisible.
+$script:ProductKeyFormatMessage = 'ProductKey has an invalid format. Supply 25 characters as five groups of five letters or digits separated by ASCII hyphens, for example ABCDE-FGHIJ-KLMNO-PQRST-UVWXY.'
+
 function Install-Office {
   <#
     .SYNOPSIS
@@ -1121,7 +1126,9 @@ function Get-OfficeInventory {
       $officeCode = $keyName -match '^\{9[01](12|14|15|16)0000-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$'
       $officeName = $values['DisplayName'] -match 'Office|Visio|Project|Access|SharePoint Designer|InfoPath|Lync'
       $controller = $values['UninstallString'] -match '\\OFFICE(12|14|15|16)\\Office Setup Controller\\setup\.exe"?\s+/uninstall\s'
-      $infrastructure = $keyName -match '^\{9[01]160000-(008C|008F|00DD)-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$' -and
+      # 007E is the Licensing Component observed on a native Standard 2019
+      # Volume installation; 008F was assumed from synthetic evidence only.
+      $infrastructure = $keyName -match '^\{9[01]160000-(007E|008C|008F|00DD)-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$' -and
       $values['DisplayName'] -match '^Office 16 Click-to-Run (Licensing|Extensibility|Localization) Component(?: 64-bit Registration)?$'
       $addIn = $values['WindowsInstaller'] -eq 1 -and $values['DisplayName'] -in @(
         'Microsoft Teams Meeting Add-in for Microsoft Office',
@@ -2460,7 +2467,7 @@ function Invoke-PSFOfficeConfiguration {
       try {
         $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer).Trim().ToUpperInvariant()
         if ($plain -notmatch '^([A-Z0-9]{5}-){4}[A-Z0-9]{5}$') {
-          Stop-PSFOfficeOperation InvalidProductKey 'ProductKey has an invalid format.'
+          Stop-PSFOfficeOperation InvalidProductKey $script:ProductKeyFormatMessage
         }
         $Document.Configuration.Add.Product.SetAttribute('PIDKEY', $plain)
       }
@@ -3146,7 +3153,7 @@ function Invoke-PSFOfficeWorkflow {
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($ProductKey)
     try {
       if ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer).Trim() -notmatch '^([A-Za-z0-9]{5}-){4}[A-Za-z0-9]{5}$') {
-        Stop-PSFOfficeOperation InvalidProductKey 'ProductKey has an invalid format.'
+        Stop-PSFOfficeOperation InvalidProductKey $script:ProductKeyFormatMessage
       }
     }
     finally {
