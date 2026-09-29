@@ -185,17 +185,22 @@ Describe 'Imported Office sparse registry values' {
     $observed.Unknowns | Should -Contain 'OrphanedOfficePatchRegistration:{90120000-001B-0407-0000-0000000FF1CE}_ENTERPRISER_{DB2ACBD1-65B1-4FC5-881E-4E75C668E7E2}'
   }
 
-  It 'recognizes the natively observed Click-to-Run Licensing Component' {
-    # Product code 007E was observed on a real Standard 2019 Volume install.
-    # The synthetic fixture assumed 008F, so this case could not be reached by
-    # it: misclassification pushed the component into the legacy MSI bucket and
-    # raised a false OtherProducts discrepancy after a successful migration.
+  It 'recognizes Click-to-Run infrastructure without a component SKU allowlist (<Code>/<Name>)' -ForEach @(
+    @{ Code = '007E'; Name = 'Office 16 Click-to-Run Licensing Component' }
+    @{ Code = '008F'; Name = 'Office 16 Click-to-Run Licensing Component' }
+    @{ Code = '0BAD'; Name = 'Office 16 Click-to-Run Licensing Component' }
+    @{ Code = '0BAD'; Name = 'Office 16 Click-to-Run Extensibility Component 64-bit Registration' }
+    @{ Code = '0BAD'; Name = 'Office 16 Click-to-Run Localization Component' }
+  ) {
+    # 007E and 008F are native observations from two 2019 installations.
+    # 0BAD is deliberately synthetic: classification must not depend on a
+    # growing list of observed SKU fragments.
     $script:sparseRegistry = @([PSCustomObject]@{
         View   = 'Registry64'
-        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{90160000-007E-0000-1000-0000000FF1CE}'
+        Path   = "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{90160000-$Code-0000-1000-0000000FF1CE}"
         Values = [PSCustomObject]@{
           Publisher   = 'Microsoft Corporation'
-          DisplayName = 'Office 16 Click-to-Run Licensing Component'
+          DisplayName = $Name
         }
       })
 
@@ -203,6 +208,29 @@ Describe 'Imported Office sparse registry values' {
     $observed.Msi.Count | Should -Be 0
     @($observed.RelatedComponents | Where-Object Role -EQ ClickToRunInfrastructure).Count | Should -Be 1
     $observed.Unknowns | Should -Contain ClickToRunInfrastructureWithoutConfiguration
+  }
+
+  It 'does not hide an unrelated or inconsistent component as Click-to-Run infrastructure (<Name>/<Code>/<Publisher>)' -ForEach @(
+    @{ Code = '{90160000-007E-0000-1000-0000000FF1CE}'; Name = 'Microsoft Office Professional Plus 2016'; Publisher = 'Microsoft Corporation' }
+    @{ Code = '{90160000-0BAD-0000-1000-0000000FF1CE}'; Name = 'Office 16 Click-to-Run Unknown Component'; Publisher = 'Microsoft Corporation' }
+    @{ Code = '{90160000-007E-0000-1000-0000000FF1CE}'; Name = 'Office 16 Click-to-Run Licensing Component'; Publisher = 'Other publisher' }
+    @{ Code = '{90140000-2005-0000-0000-0000000FF1CE}'; Name = 'Office 16 Click-to-Run Licensing Component'; Publisher = 'Microsoft Corporation' }
+    @{ Code = '{90140000-2005-0000-0000-0000000FF1CE}'; Name = 'Microsoft Office File Validation Add-In'; Publisher = 'Microsoft Corporation' }
+  ) {
+    $script:sparseRegistry = @([PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$Code"
+        Values = [PSCustomObject]@{
+          Publisher        = $Publisher
+          DisplayName      = $Name
+          WindowsInstaller = 1
+        }
+      })
+    $observed = PSFoundation\Get-OfficeInventory
+    @($observed.RelatedComponents | Where-Object Role -EQ ClickToRunInfrastructure).Count | Should -Be 0
+    if ($Publisher -eq 'Microsoft Corporation') {
+      $observed.Msi.Count | Should -Be 1
+    }
   }
 
   It 'does not accept a ClientCulture the resource registration contradicts' {
@@ -1132,6 +1160,32 @@ Describe 'Office scoped migration pilot' {
       { Resume-OfficeMigration -Recovery $recovery -OdtPath C:\ODT\setup.exe } | Should -Throw '*evidence only*'
       Should -Invoke Invoke-PSFOfficeConfiguration -Times 1
     }
+  }
+}
+
+Describe 'Office ordinary host assessment' {
+  It 'accepts x64 desktop Windows 10 22H2 or later (<Build>/<Type>/<Cpu>)' -ForEach @(
+    @{ Build = '19045'; Type = 1; Cpu = 9; Expected = $true }
+    @{ Build = '22000'; Type = 1; Cpu = 9; Expected = $true }
+    @{ Build = '26100'; Type = 1; Cpu = 9; Expected = $true }
+    @{ Build = '19044'; Type = 1; Cpu = 9; Expected = $false }
+    @{ Build = '17763'; Type = 1; Cpu = 9; Expected = $false }
+    @{ Build = '19045'; Type = 1; Cpu = 0; Expected = $false }
+    @{ Build = '26100'; Type = 1; Cpu = 12; Expected = $false }
+    @{ Build = '26100'; Type = 3; Cpu = 9; Expected = $false }
+    @{ Build = '26100'; Type = 2; Cpu = 9; Expected = $false }
+  ) {
+    $script:hostBuild = $Build
+    $script:hostType = $Type
+    $script:hostCpu = $Cpu
+    Mock Get-CimInstance { [PSCustomObject]@{ ProductType = $script:hostType; BuildNumber = $script:hostBuild } } -ParameterFilter { $ClassName -eq 'Win32_OperatingSystem' }
+    Mock Get-CimInstance { [PSCustomObject]@{ Architecture = $script:hostCpu } } -ParameterFilter { $ClassName -eq 'Win32_Processor' }
+    Test-PSFOfficeHost | Should -Be $Expected
+  }
+
+  It 'propagates host discovery failure instead of assuming eligibility' {
+    Mock Get-CimInstance { throw 'Synthetic host lookup failure' }
+    { Test-PSFOfficeHost } | Should -Throw '*Synthetic host lookup failure*'
   }
 }
 

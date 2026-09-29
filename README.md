@@ -272,26 +272,34 @@ $recovery | Resume-OfficeInstallation -OdtPath 'C:\Tools\ODT\setup.exe' -WhatIf
 # Migration journals require Resume-OfficeMigration and fresh confirmation of remaining scope.
 ```
 
-**Current validation limits:** ordinary native execution is restricted to x64 Windows 11 desktop. The explicitly scoped pilot below is the
-only Windows 10 exception. Product IDs are deployment identifiers, not a claim of current vendor lifecycle support. Routine tests mock ODT
-and do not certify any real Office installation. Standalone MSI removal is unsupported. Recovery supports verification of completed
-installations, pre-launch continuation, and migration continuation after verified Click-to-Run removal. Replaying an uncertain partial
-installer returns `UnsupportedRecoveryState`; Quick Repair, Online Repair, rollback, and journal-free mutation are not implemented.
+**Host requirements:** ordinary native execution accepts x64 Windows 10 22H2 (build 19045) and later Windows desktop hosts, including
+Windows 11. Older Windows 10 builds, Windows Server and ARM hosts remain outside this backend's scope. Elevated 64-bit PowerShell, no
+pending reboot, and no active deployment are still required. Product IDs are deployment identifiers, not a claim of current vendor lifecycle
+support. Routine tests mock ODT and do not certify any real Office installation. Standalone MSI removal is unsupported. Recovery supports
+verification of completed installations, pre-launch continuation, and migration continuation after verified Click-to-Run removal. Replaying
+an uncertain partial installer returns `UnsupportedRecoveryState`; Quick Repair, Online Repair, rollback, and journal-free mutation are not
+implemented.
 
 Inventory uses Microsoft's documented `ClickToRun\Inventory\Office\16.0` product/build values and preserves incomplete registration and
-resource evidence. It deliberately does **not** promote `VersionToReport`, `ClientCulture`, or per-user language preferences to proof of
-complete installed languages or primary shell language. The native language/primary-language verification backend remains a validation gate:
-these fields currently remain unknown, preventing full compliance and maintenance that depends on preserving them. Native inventory exposes
-`VerificationLimitations`; installation and migration plans return `UnsupportedNativeVerification` before mutation when the backend cannot
-verify these required postconditions. Installed-Office automatic locale preservation therefore remains blocked on native observations.
-Update-policy and preference execution returns `AppliedUnverified` until effective settings can be independently verified. Validate these
-scenarios on separately authorized disposable VMs before production adoption; a mocked passing suite is not that evidence.
+resource evidence. `Languages` is derived from the active per-product culture registrations. A single registered language supplies
+`PrimaryLanguage`; with multiple registered languages, the current reader uses `ClientCulture` only when it belongs to that set. Missing or
+ambiguous observations remain unknown. These inference rules still need broader native validation, especially bilingual installations.
+Per-user language preferences and requested XML are not installation evidence. `VerificationLimitations` reflects unresolved language fields
+on observed Click-to-Run products. A clean or MSI-only source can now reach an eligible ordinary plan; that is not a promise of verified
+post-installation compliance. Installed build and application exclusions can still be unknown, and legacy MSI automatic locale sourcing is
+not implemented. `VersionToReport` is not substituted for an absent installed-build observation. Update-policy and preference execution
+returns `AppliedUnverified` until effective settings can be independently verified. Validate these scenarios on separately authorized
+disposable VMs before production adoption; a mocked passing suite is not that evidence.
 
 Inventory distinguishes known Click-to-Run infrastructure and known Office add-ins in `RelatedComponents` from legacy Office entries in
 `Msi`. Orphaned Click-to-Run infrastructure remains an unknown state. Known add-in registrations must survive deployment; this check does
 not establish add-in compatibility with the destination architecture. Unrecognized Office components remain subject to conservative
-classification and blocking. `RegisteredLanguages` contains candidates from the active product registration, and `LanguageEvidence`
-preserves machine language observations. Neither field establishes complete installed languages or primary shell language.
+classification and blocking. Infrastructure classification requires a Microsoft publisher, an Office 16 product-code structure, and a
+specific Click-to-Run Licensing, Extensibility or Localization component name. It does not rely on a list of component SKU fragments such as
+`007E` or `008F`. Both have been observed for Licensing Components; neither is canonical. Actual product codes remain in inventory as
+identities. Unrecognized names or other Office families are not automatically treated as infrastructure. `RegisteredLanguages` retains the
+culture registrations used by language inference; `LanguageEvidence` preserves machine language observations separately from user
+preferences.
 
 These inventory fields are additive within schema 1. Existing plans must be recreated after inventory changes; execution revalidates current
 observations. Existing recovery journals remain subject to their original authority and the current verification gates.
@@ -333,10 +341,11 @@ gain pilot authority by adding fields. Save the result, protected journal/JSONL,
 reverting its snapshot. ODT logs may contain sensitive data. Verify German UI, all four proofing languages, build, x64 apps, activation,
 retained add-ins, representative documents and the user's Outlook profile manually. No actual Office migration is exercised by unit tests.
 
-The current migration validation target is Office Enterprise 2007 to Standard 2019, 64-bit, with language preservation on Windows 10 x64.
-The Windows 10 execution path, language/proofing preservation, and interrupted-installer recovery still require validation; the execution
-host gate remains Windows 11 x64. The Office 2019 reference captures do not contain the installed-build inventory key. Their telemetry build
-is not substituted as proof. This is a validation target, not a completed deployment capability or a vendor lifecycle support statement.
+An Office Enterprise 2007 x86 to Standard 2019 x64 migration on Windows 10 22H2 x64 completed with native exit 0 and licensed activation.
+The operator verified German UI, the intended proofing resources, applications, add-ins, and Outlook profile/data/settings preservation.
+Post-installation reporting exposed an infrastructure-classification defect and a remaining legacy File Validation Add-In; native success
+and manual acceptance are therefore recorded separately from automated compliance. The Office 2019 captures lack the installed-build
+inventory key. Verified repeat runs, additional deployment combinations, and interrupted-installer recovery remain separate validation work.
 
 Microsoft references: [ODT operations](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/overview-office-deployment-tool),
 [configuration and language behavior](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/office-deployment-tool-configuration-options),

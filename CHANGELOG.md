@@ -2,7 +2,8 @@
 
 ### Features
 
-* **src:** derive Click-to-Run languages from native registration ([96a3892](https://github.com/adnoctem/PSFoundation/commit/96a389207c6d29efdb62a61ab3a5803af936343a))
+- **src:** derive Click-to-Run languages from native registration
+  ([96a3892](https://github.com/adnoctem/PSFoundation/commit/96a389207c6d29efdb62a61ab3a5803af936343a))
 
 ## [1.7.5](https://github.com/adnoctem/PSFoundation/compare/v1.7.4...v1.7.5) (2026-09-29)
 

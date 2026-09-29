@@ -1158,9 +1158,11 @@ function Get-OfficeInventory {
       $officeCode = $keyName -match '^\{9[01](12|14|15|16)0000-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$'
       $officeName = $values['DisplayName'] -match 'Office|Visio|Project|Access|SharePoint Designer|InfoPath|Lync'
       $controller = $values['UninstallString'] -match '\\OFFICE(12|14|15|16)\\Office Setup Controller\\setup\.exe"?\s+/uninstall\s'
-      # 007E is the Licensing Component observed on a native Standard 2019
-      # Volume installation; 008F was assumed from synthetic evidence only.
-      $infrastructure = $keyName -match '^\{9[01]160000-(007E|008C|008F|00DD)-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$' -and
+      # Both 007E and 008F occur in native Licensing Component registrations.
+      # Product codes identify releases/packages, not stable component roles.
+      # Keep the Office 16 family, Microsoft publisher and exact known role
+      # checks together; do not maintain a list of component SKU fragments.
+      $infrastructure = $keyName -match '^\{9[01]160000-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$' -and
       $values['DisplayName'] -match '^Office 16 Click-to-Run (Licensing|Extensibility|Localization) Component(?: 64-bit Registration)?$'
       $addIn = $values['WindowsInstaller'] -eq 1 -and $values['DisplayName'] -in @(
         'Microsoft Teams Meeting Add-in for Microsoft Office',
@@ -2722,6 +2724,16 @@ function Get-PSFOfficeActivity {
   }
 }
 
+function Test-PSFOfficeHost {
+  [CmdletBinding()]
+  [OutputType([bool])]
+  param ()
+
+  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+  $processor = Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1
+  ($os.ProductType -eq 1 -and [int]$os.BuildNumber -ge 19045 -and $processor.Architecture -eq 9)
+}
+
 function Test-PSFOfficePilotHost {
   [CmdletBinding()]
   [OutputType([bool])]
@@ -2802,17 +2814,15 @@ function Assert-PSFOfficeHost {
   if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
     Stop-PSFOfficeOperation Unsupported 'Use 64-bit PowerShell on 64-bit Windows.'
   }
-  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-  $processor = Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1
-  # Initial validated host family is x64 Windows 11 desktop. Older/Server/ARM
-  # combinations remain explicit support gates, not a loose Windows >= 10 test.
+  # Ordinary execution accepts x64 Windows 10 22H2 and later desktop hosts.
+  # Existing pilot plans retain their original, narrower host authority.
   if ($PilotMigration) {
     if (-not (Test-PSFOfficePilotHost)) {
       Stop-PSFOfficeOperation UnsupportedPilotHost 'Pilot requires x64 Windows 10 desktop build 19045.'
     }
   }
-  elseif ($os.ProductType -ne 1 -or [int]$os.BuildNumber -lt 22000 -or $processor.Architecture -ne 9) {
-    Stop-PSFOfficeOperation Unsupported 'This backend currently targets x64 Windows 11 desktop hosts.'
+  elseif (-not (Test-PSFOfficeHost)) {
+    Stop-PSFOfficeOperation Unsupported 'This backend requires x64 Windows 10 22H2 (build 19045) or later desktop hosts.'
   }
   if ((Test-PendingReboot).PendingReboot) {
     Stop-PSFOfficeOperation RebootRequired 'A pending reboot blocks Office mutation.'
