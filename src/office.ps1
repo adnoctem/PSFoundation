@@ -945,9 +945,17 @@ function Get-PSFOfficeRegistrySnapshot {
                 'DisplayVersion',
                 'Publisher',
                 'WindowsInstaller',
-                'UninstallString'
+                'UninstallString',
+                'SystemComponent',
+                'ParentKeyName',
+                'ParentDisplayName'
               ) -or $name -like '*.ExcludedApps') {
               $values[$name] = $key.GetValue($name)
+            }
+            elseif ($name -eq '' -and $path -like '*\App Paths\*') {
+              # An App Paths default value is the registered executable path. It
+              # separates Click-to-Run residue from ordinary MSI registration.
+              $values['(default)'] = $key.GetValue($name)
             }
           }
           [PSCustomObject]@{
@@ -1015,7 +1023,16 @@ function Get-OfficeInventory {
   }
   $installedRecords = @($records | Where-Object { $_.Path -like '*ClickToRun\Inventory\Office\16.0' })
   $configuredRecords = @($records | Where-Object { $_.Path -like '*ClickToRun\Configuration' })
-  if (-not $configuredRecords.Count -and @($records | Where-Object { $_.Path -like '*\App Paths\*' -or $_.Path -like '*ClickToRun\ProductReleaseIDs*' -or $_.Path -like '*ClickToRun\Inventory\Office\16.0' }).Count) {
+  # Only Click-to-Run artifacts can evidence Click-to-Run residue. App Paths are
+  # ordinary registration on any MSI install and count solely when their
+  # registered executable resolves into a Click-to-Run layout.
+  $residueRecords = @($records | Where-Object {
+      $_.Path -like '*ClickToRun\ProductReleaseIDs*' -or
+      $_.Path -like '*ClickToRun\Inventory\Office\16.0' -or
+      ($_.Path -like '*\App Paths\*' -and [string]$_.Values['(default)'] -match 'Office16|ClickToRun')
+    })
+
+  if (-not $configuredRecords.Count -and $residueRecords.Count) {
     [void]$unknowns.Add('OfficeResidueWithoutConfiguration')
   }
   $registeredResources = @($records | Where-Object { $_.Path -like '*ClickToRun\ProductReleaseIDs*' } | ForEach-Object {
@@ -1123,6 +1140,37 @@ function Get-OfficeInventory {
         }
         continue
       }
+
+      # Windows Installer patch registrations (service packs, hotfixes) are
+      # registered per product and carry the parent product code. They are not
+      # separate Office products. Classify them by structure, never by display
+      # name: the name is localized and cannot be matched reliably.
+      $patchParent = $null
+
+      if ($keyName -match '^(\{[0-9A-F-]{36}\})_.+_\{[0-9A-F-]{36}\}$') {
+        $patchParent = $Matches[1]
+      }
+      elseif ([string]$values['UninstallString'] -match '/package\s+(\{[0-9A-F-]{36}\})\s+/uninstall\s+\{[0-9A-F-]{36}\}') {
+        $patchParent = $Matches[1]
+      }
+
+      if ($patchParent -notmatch '^\{9[01](12|14|15|16)0000-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$') {
+        $patchParent = $null
+      }
+
+      if ($isMicrosoft -and $patchParent) {
+        [void]$related.Add([PSCustomObject]@{
+            ProductCode       = $keyName
+            Name              = $values['DisplayName']
+            Version           = $values['DisplayVersion']
+            RegistryView      = $record.View
+            Role              = 'PatchRegistration'
+            ParentProductCode = $patchParent
+            SystemComponent   = ($values['SystemComponent'] -eq 1)
+          })
+        continue
+      }
+
       if ($isMicrosoft -and ($officeCode -or ($officeName -and ($values['WindowsInstaller'] -eq 1 -or $controller)))) {
         $resourceKind = 'ProductOrComponent'
         if (($officeCode -and $keyName -match '^\{[^-]+-(001F|002C)-') -or $values['DisplayName'] -match '\bProof(?:ing)?\b') {
@@ -1158,6 +1206,18 @@ function Get-OfficeInventory {
       }
     }
   }
+
+  # Registry order is not guaranteed, so resolve patch parents only once every
+  # product has been read. A patch whose product is absent is real missing
+  # evidence and stays unknown.
+  $msiProductCodes = @($msi | ForEach-Object { $_.ProductCode })
+
+  foreach ($patch in @($related | Where-Object { $_.Role -eq 'PatchRegistration' })) {
+    if ($patch.ParentProductCode -notin $msiProductCodes) {
+      [void]$unknowns.Add("OrphanedOfficePatchRegistration:$($patch.ProductCode)")
+    }
+  }
+
   $unique = @()
   foreach ($group in @($products | Group-Object ProductId)) {
     $variants = @($group.Group | ForEach-Object { '{0}|{1}|{2}' -f $_.Architecture, $_.Version, $_.Channel } | Sort-Object -Unique)

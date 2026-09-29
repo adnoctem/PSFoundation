@@ -2,8 +2,9 @@
 
 ### Bug Fixes
 
-* clear formatting inconsistencies ([886dbe7](https://github.com/adnoctem/PSFoundation/commit/886dbe7044f40cad8e507190cb0070dd526d4b11))
-* **src:** handle sparse Office inventory under strict mode ([3493f7b](https://github.com/adnoctem/PSFoundation/commit/3493f7bf339a88f44042e4d2c1c0d3b3caef4688))
+- clear formatting inconsistencies ([886dbe7](https://github.com/adnoctem/PSFoundation/commit/886dbe7044f40cad8e507190cb0070dd526d4b11))
+- **src:** handle sparse Office inventory under strict mode
+  ([3493f7b](https://github.com/adnoctem/PSFoundation/commit/3493f7bf339a88f44042e4d2c1c0d3b3caef4688))
 
 ## [1.7.2](https://github.com/adnoctem/PSFoundation/compare/v1.7.1...v1.7.2) (2026-09-28)
 

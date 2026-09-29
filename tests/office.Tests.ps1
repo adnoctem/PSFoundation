@@ -132,6 +132,88 @@ Describe 'Imported Office sparse registry values' {
     (PSFoundation\Get-OfficeDeploymentPlan -Action Install -Configuration $target -Inventory $observed).Eligible | Should -BeFalse
   }
 
+  It 'classifies Office 2007 patch registrations without a WindowsInstaller value' {
+    # Sanitized from an Office Enterprise 2007 SP3 workstation: the patch keys
+    # carry no WindowsInstaller value and a localizable service-pack name.
+    $script:sparseRegistry = @(
+      [PSCustomObject]@{
+        View   = 'Registry32'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{90120000-001B-0407-0000-0000000FF1CE}'
+        Values = [PSCustomObject]@{
+          Publisher        = 'Microsoft'
+          DisplayName      = 'Microsoft Office Word MUI (German) 2007'
+          WindowsInstaller = 1
+        }
+      }
+      [PSCustomObject]@{
+        View   = 'Registry32'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{90120000-001B-0407-0000-0000000FF1CE}_ENTERPRISER_{DB2ACBD1-65B1-4FC5-881E-4E75C668E7E2}'
+        Values = [PSCustomObject]@{
+          Publisher         = 'Microsoft'
+          DisplayName       = 'Microsoft Office 2007 Service Pack 3 (SP3)'
+          ParentKeyName     = '{90120000-001B-0407-0000-0000000FF1CE}'
+          ParentDisplayName = 'Microsoft Office Word MUI (German) 2007'
+          SystemComponent   = 1
+          UninstallString   = 'msiexec /package {90120000-001B-0407-0000-0000000FF1CE} /uninstall {DB2ACBD1-65B1-4FC5-881E-4E75C668E7E2}'
+        }
+      }
+    )
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 1
+    $observed.Msi[0].ResourceKind | Should -Be LanguageResource
+    $patch = @($observed.RelatedComponents | Where-Object Role -EQ PatchRegistration)
+    $patch.Count | Should -Be 1
+    $patch[0].ParentProductCode | Should -Be '{90120000-001B-0407-0000-0000000FF1CE}'
+    $patch[0].SystemComponent | Should -BeTrue
+    $observed.Unknowns.Count | Should -Be 0
+  }
+
+  It 'keeps a patch registration unknown when its product is absent' {
+    $script:sparseRegistry = @([PSCustomObject]@{
+        View   = 'Registry32'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{90120000-001B-0407-0000-0000000FF1CE}_ENTERPRISER_{DB2ACBD1-65B1-4FC5-881E-4E75C668E7E2}'
+        Values = [PSCustomObject]@{
+          Publisher       = 'Microsoft'
+          DisplayName     = 'Microsoft Office 2007 Service Pack 3 (SP3)'
+          SystemComponent = 1
+        }
+      })
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 0
+    $observed.Unknowns | Should -Contain 'OrphanedOfficePatchRegistration:{90120000-001B-0407-0000-0000000FF1CE}_ENTERPRISER_{DB2ACBD1-65B1-4FC5-881E-4E75C668E7E2}'
+  }
+
+  It 'does not read Office 2007 App Paths as Click-to-Run residue' {
+    $script:sparseRegistry = @(
+      [PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'
+        Values = [PSCustomObject]@{ '(default)' = 'C:\PROGRA~2\MICROS~2\Office12\WINWORD.EXE' }
+      }
+      [PSCustomObject]@{
+        View   = 'Registry32'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\OUTLOOK.EXE'
+        Values = [PSCustomObject]@{ '(default)' = 'C:\PROGRA~2\MICROS~2\Office12\OUTLOOK.EXE' }
+      }
+    )
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Unknowns | Should -Not -Contain OfficeResidueWithoutConfiguration
+  }
+
+  It 'still reports Click-to-Run App Paths without a configuration as residue' {
+    $script:sparseRegistry = @([PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'
+        Values = [PSCustomObject]@{ '(default)' = 'C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE' }
+      })
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Unknowns | Should -Contain OfficeResidueWithoutConfiguration
+  }
+
   It 'preserves incomplete Click-to-Run registration as unknown evidence' {
     $script:sparseRegistry = @([PSCustomObject]@{
         View   = 'Registry64'
