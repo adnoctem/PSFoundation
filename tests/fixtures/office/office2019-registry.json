@@ -50,7 +50,7 @@
         "View":  "Registry64",
         "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\culture\\de-de.16",
         "Values":  {
-
+                       "Version":  "16.0.10417.20208"
                    },
         "SubKeys":  [
 
@@ -60,7 +60,7 @@
         "View":  "Registry64",
         "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\culture\\x-none.16",
         "Values":  {
-
+                       "Version":  "16.0.10417.20208"
                    },
         "SubKeys":  [
 
@@ -81,7 +81,7 @@
         "View":  "Registry64",
         "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\Standard2019Volume.16\\de-de",
         "Values":  {
-
+                       "Version":  "16.0.10417.20208"
                    },
         "SubKeys":  [
 
@@ -91,7 +91,7 @@
         "View":  "Registry64",
         "Path":  "SOFTWARE\\Microsoft\\Office\\ClickToRun\\ProductReleaseIDs\\00000000-0000-0000-0000-000000000001\\Standard2019Volume.16\\x-none",
         "Values":  {
-
+                       "Version":  "16.0.10417.20208"
                    },
         "SubKeys":  [
 

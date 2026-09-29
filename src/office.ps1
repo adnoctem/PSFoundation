@@ -947,7 +947,8 @@ function Get-PSFOfficeRegistrySnapshot {
                 'SystemComponent',
                 'ParentKeyName',
                 'ParentDisplayName'
-              ) -or $name -like '*.ExcludedApps') {
+              ) -or $name -like '*.ExcludedApps' -or
+              ($name -eq 'Version' -and $path.StartsWith($releaseRoot + '\', [StringComparison]::OrdinalIgnoreCase))) {
               $values[$name] = $key.GetValue($name)
             }
             elseif ($name -eq '' -and $path -like '*\App Paths\*') {
@@ -974,6 +975,103 @@ function Get-PSFOfficeRegistrySnapshot {
   }
 }
 
+function Resolve-PSFOfficeInstalledVersion {
+  [CmdletBinding()]
+  param (
+    [object[]]
+    $Records,
+
+    [string]
+    $View,
+
+    [string]
+    $ProductId,
+
+    [string[]]
+    $ConfiguredProductIds
+  )
+
+  $result = [PSCustomObject]@{
+    Version  = $null
+    Source   = $null
+    Evidence = 'Installed version unknown: no complete active product resource registration'
+    Issue    = $null
+  }
+  # Ordered evidence: absence may fall through, contradictions must not. The
+  # resource fallback is an observed registry layout, not Microsoft's documented
+  # inventory contract. Never derive a build from telemetry or requested XML.
+  foreach ($source in @('ClickToRunInventory', 'ActiveProductResources')) {
+    switch ($source) {
+      'ClickToRunInventory' {
+        $path = 'SOFTWARE\Microsoft\Office\ClickToRun\Inventory\Office\16.0'
+        $installed = @($Records | Where-Object { $_.View -eq $View -and $_.Path -eq $path })
+        if (-not $installed.Count) { continue }
+        if ($installed.Count -ne 1) {
+          $result.Evidence = "Installed version unknown: duplicate $View inventory records"
+          return $result
+        }
+        $ids = @(([string]$installed[0].Values['OfficeProductReleaseIds'] -split '[,;]') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ((@($ids | Sort-Object) -join ',') -ne (@($ConfiguredProductIds | Sort-Object) -join ',')) {
+          $result.Issue = 'ConflictingInstalledProductIdentity'
+          $result.Evidence = "Installed version unknown: $View inventory product identity differs from configuration"
+          return $result
+        }
+        if (-not $installed[0].Values.ContainsKey('OfficePackageVersion')) { continue }
+        $value = $installed[0].Values['OfficePackageVersion']
+        $parsed = $null
+        if ($value -isnot [string] -or $value -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+          -not [version]::TryParse($value, [ref]$parsed)) {
+          $result.Evidence = "Installed version unknown: malformed $View inventory OfficePackageVersion"
+          return $result
+        }
+        $result.Version = $parsed.ToString()
+        $result.Source = $source
+        $result.Evidence = "Installed version from $View`: $path`:OfficePackageVersion"
+        return $result
+      }
+      'ActiveProductResources' {
+        $root = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs'
+        $active = @($Records | Where-Object { $_.View -eq $View -and $_.Path -eq $root })
+        if ($active.Count -ne 1 -or $ProductId -notmatch '^[a-z0-9]+$' -or
+          [string]$active[0].Values['ActiveConfiguration'] -notmatch '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') {
+          return $result
+        }
+        $path = $root + '\' + $active[0].Values['ActiveConfiguration'] + '\' + $ProductId + '.16'
+        $product = @($Records | Where-Object { $_.View -eq $View -and $_.Path -eq $path })
+        if ($product.Count -ne 1) { return $result }
+        $cultures = @($product[0].SubKeys)
+        if ('x-none' -notin $cultures -or $cultures.Count -lt 2 -or
+          @($cultures | Where-Object { $_ -ne 'x-none' -and $_ -notmatch '^[a-z]{2,3}-[a-z]{2,4}$' }).Count) {
+          return $result
+        }
+        $versions = @()
+        foreach ($culture in $cultures) {
+          $leafPath = $path + '\' + $culture
+          $leaf = @($Records | Where-Object { $_.View -eq $View -and $_.Path -eq $leafPath })
+          $parsed = $null
+          if ($leaf.Count -ne 1 -or $leaf[0].Values['Version'] -isnot [string] -or
+            $leaf[0].Values['Version'] -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+            -not [version]::TryParse($leaf[0].Values['Version'], [ref]$parsed)) {
+            $result.Evidence = "Installed version unknown: missing, duplicate or malformed Version at $View`: $leafPath"
+            return $result
+          }
+          $versions += $parsed.ToString()
+        }
+        $versions = @($versions | Sort-Object -Unique)
+        if ($versions.Count -ne 1) {
+          $result.Evidence = "Installed version unknown: conflicting active resource versions at $View`: $path"
+          return $result
+        }
+        $result.Version = $versions[0]
+        $result.Source = $source
+        $result.Evidence = "Installed version derived from agreeing Version values at $View`: $path resources [$($cultures -join ',')]"
+        return $result
+      }
+    }
+  }
+  $result
+}
+
 function Get-OfficeInventory {
   <#
     .SYNOPSIS
@@ -982,6 +1080,10 @@ function Get-OfficeInventory {
       Inspects both machine registry views and preserves incomplete or conflicting
       evidence. Language completeness and shell language are not inferred from
       ClientCulture alone. Unknown properties cannot establish compliance.
+      Installed build prefers documented Click-to-Run inventory, falling back to
+      agreeing Version values on every active per-product resource when the
+      documented key or value is absent. VersionSource and Evidence identify the
+      observation used; telemetry never establishes the installed build.
     .EXAMPLE
       Get-OfficeInventory
   #>
@@ -1019,7 +1121,6 @@ function Get-OfficeInventory {
   catch {
     [void]$unknowns.Add('RegistryDiscoveryFailed')
   }
-  $installedRecords = @($records | Where-Object { $_.Path -like '*ClickToRun\Inventory\Office\16.0' })
   $configuredRecords = @($records | Where-Object { $_.Path -like '*ClickToRun\Configuration' })
   # Only Click-to-Run artifacts can evidence Click-to-Run residue. App Paths are
   # ordinary registration on any MSI install and count solely when their
@@ -1039,25 +1140,21 @@ function Get-OfficeInventory {
         Path                = $_.Path
         SubKeys             = @($_.SubKeys)
         ActiveConfiguration = $_.Values['ActiveConfiguration']
+        Version             = $_.Values['Version']
       }
     })
   foreach ($record in $records) {
     $values = $record.Values
     if ($record.Path -like '*ClickToRun\Configuration') {
       $ids = @(([string]$values['ProductReleaseIds'] -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-      $installed = @($installedRecords | Where-Object { $_.View -eq $record.View })
-      $installedVersion = $null
-      if ($installed.Count -eq 1) {
-        $installedIds = @(([string]$installed[0].Values['OfficeProductReleaseIds'] -split '[,;]') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        if ((@($ids | Sort-Object) -join ',') -ne (@($installedIds | Sort-Object) -join ',')) {
-          [void]$unknowns.Add('ConflictingInstalledProductIdentity')
-        }
-        $installedVersion = $installed[0].Values['OfficePackageVersion']
-      }
       if (-not $ids.Count) {
         [void]$unknowns.Add('IncompleteClickToRunRegistration')
       }
       foreach ($id in $ids) {
+        $installedVersion = Resolve-PSFOfficeInstalledVersion -Records $records -View $record.View -ProductId $id -ConfiguredProductIds $ids
+        if ($installedVersion.Issue) {
+          [void]$unknowns.Add($installedVersion.Issue)
+        }
         $architecture = $null
         if ($values['Platform'] -eq 'x64') {
           $architecture = '64'
@@ -1128,7 +1225,8 @@ function Get-OfficeInventory {
         [void]$products.Add([PSCustomObject][ordered]@{
             ProductId           = $id
             Architecture        = $architecture
-            Version             = $installedVersion
+            Version             = $installedVersion.Version
+            VersionSource       = $installedVersion.Source
             Channel             = $channel
             Languages           = $languages
             PrimaryLanguage     = $primaryLanguage
@@ -1136,7 +1234,7 @@ function Get-OfficeInventory {
             ExcludeApp          = $excluded
             Evidence            = @(
               "$($record.View):$($record.Path)",
-              "Installed version source: ClickToRun/Inventory/Office/16.0:OfficePackageVersion",
+              $installedVersion.Evidence,
               "Telemetry VersionToReport=$($values['VersionToReport']); not installation evidence",
               "ClientCulture=$($values['ClientCulture']); not proof of complete languages or shell UI",
               $languageEvidence,

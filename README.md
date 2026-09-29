@@ -303,12 +303,30 @@ verification of completed installations, pre-launch continuation, and migration 
 an uncertain partial installer returns `UnsupportedRecoveryState`; Quick Repair, Online Repair, rollback, and journal-free mutation are not
 implemented.
 
-Inventory uses Microsoft's documented `ClickToRun\Inventory\Office\16.0` product/build values and preserves incomplete registration and
-resource evidence. `Languages` is derived from the active per-product culture registrations. A single registered language supplies
-`PrimaryLanguage`; with multiple registered languages, the current reader uses `ClientCulture` only when it belongs to that set. Missing or
-ambiguous observations remain unknown. These inference rules still need broader native validation, especially bilingual installations.
-Per-user language preferences and requested XML are not installation evidence. `VerificationLimitations` reflects unresolved language fields
-on observed Click-to-Run products. A clean or MSI-only source can now reach an eligible ordinary plan; that is not a promise of verified
+Inventory resolves installed builds in evidence order:
+
+1. Microsoft's documented `ClickToRun\Inventory\Office\16.0:OfficePackageVersion`, with matching `OfficeProductReleaseIds`.
+2. When that key or version value is absent, agreeing `Version` values under
+   `ClickToRun\ProductReleaseIDs\<ActiveConfiguration>\<ProductId>.16\<resource>`. The selected product must register `x-none` and at least
+   one language; every listed resource must have exactly one valid four-part version, and all must agree in the same registry view.
+
+`Products[].VersionSource` identifies `ClickToRunInventory` or `ActiveProductResources`; `Evidence` records the selected path or why the
+version remains unknown. Resource versions are retained in `RegisteredResources`. Missing evidence can fall through; malformed documented
+versions, conflicting product identities, and duplicate inventory records cannot. Inactive trees, another product's resources, shared
+`culture` leaves alone, and `VersionToReport` cannot supply the fallback. Valid documented inventory takes precedence over resource data.
+
+The fallback is based on Office Standard 2019 x86 and x64 observations whose resource and collected binary versions agree. It recognizes
+that registry structure without a product-year allowlist; other releases still need native validation. It is a derived observation, not a
+Microsoft-documented contract or proof of application health. No assumption is made that every pre-Microsoft-365 product lacks the inventory
+key. Microsoft's
+[installed-version guidance](https://learn.microsoft.com/en-us/microsoft-365-apps/updates/microsoft-guidance-on-office-build-install)
+explicitly excludes telemetry as installation-state evidence.
+
+`Languages` is derived from the active per-product culture registrations. A single registered language supplies `PrimaryLanguage`; with
+multiple registered languages, the current reader uses `ClientCulture` only when it belongs to that set. Missing or ambiguous observations
+remain unknown. These inference rules still need broader native validation, especially bilingual installations. Per-user language
+preferences and requested XML are not installation evidence. `VerificationLimitations` reflects unresolved language fields on observed
+Click-to-Run products. A clean or MSI-only source can now reach an eligible ordinary plan; that is not a promise of verified
 post-installation compliance. Installed build and application exclusions can still be unknown, and legacy MSI automatic locale sourcing is
 not implemented. `VersionToReport` is not substituted for an absent installed-build observation. Update-policy and preference execution
 returns `AppliedUnverified` until effective settings can be independently verified. Validate these scenarios on separately authorized

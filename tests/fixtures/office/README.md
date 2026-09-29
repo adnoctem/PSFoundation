@@ -9,5 +9,9 @@ The fixtures omit missing keys, patch registrations, and non-GUID uninstall wrap
 wrapper handling is covered separately with synthetic records in `office.Tests.ps1`. These are classification examples, not complete native
 inventories or proof of installed-language completeness. No installer was run to produce these fixtures.
 
-The 2019 fixture intentionally has no installed-build inventory key. Its configuration version must not become verified installation
-evidence. Active product language registrations remain candidates; the initial shell language and full resource completeness remain unknown.
+The 2019 fixture intentionally has no installed-build inventory key. The active product's `de-de` and `x-none` leaves and the corresponding
+shared culture leaves retain observed `Version=16.0.10417.20208` values from the x86 report. Its active-configuration GUID is synthetic; the
+channel URL is reduced to its channel identifier. The product-resource fallback requires agreeing versions for every listed product
+resource; shared culture leaves and configuration telemetry cannot establish the product build by themselves. Tests also model the x64
+sample's agreeing `16.0.10417.20211` versions and deliberately inconsistent registrations. The fixture does not establish application health
+or full resource completeness.

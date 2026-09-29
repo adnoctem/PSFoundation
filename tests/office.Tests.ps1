@@ -596,7 +596,8 @@ Describe 'Office native registry regression fixtures' {
     $observed.Products[0].ProductId | Should -Be Standard2019Volume
     $observed.Products[0].Architecture | Should -Be '32'
     $observed.Products[0].RegisteredLanguages | Should -Be @('de-de')
-    $observed.Products[0].Version | Should -BeNullOrEmpty
+    $observed.Products[0].Version | Should -Be '16.0.10417.20208'
+    $observed.Products[0].VersionSource | Should -Be ActiveProductResources
     # Derived from the active per-product resource registration; the single
     # registered language also settles the shell language without ClientCulture.
     $observed.Products[0].Languages | Should -Be @('de-de')
@@ -697,6 +698,160 @@ Describe 'Office native registry regression fixtures' {
     $result = Test-PSFOfficePostcondition $plan $after
     $result.Compliant | Should -BeFalse
     $result.Discrepancies | Should -Contain RelatedAddInChanged
+  }
+}
+
+Describe 'Imported Office installed-version evidence precedence' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  BeforeEach {
+    $script:versionRegistry = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    $script:versionRoot = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs'
+    $script:versionProduct = $versionRoot + '\00000000-0000-0000-0000-000000000001\Standard2019Volume.16'
+    $script:documentedVersion = [PSCustomObject]@{
+      View    = 'Registry64'
+      Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\Inventory\Office\16.0'
+      Values  = [PSCustomObject]@{ OfficeProductReleaseIds = 'Standard2019Volume'; OfficePackageVersion = '16.0.10417.20299' }
+      SubKeys = @()
+    }
+    Mock Get-PSFOfficeRegistrySnapshot { $script:versionRegistry } -ModuleName PSFoundation
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' } -ModuleName PSFoundation
+  }
+
+  It 'derives the observed <Platform>/<Build> resource shape independently of telemetry' -ForEach @(
+    @{ Platform = 'x86'; Build = '16.0.10417.20208'; Architecture = '32' }
+    @{ Platform = 'x64'; Build = '16.0.10417.20211'; Architecture = '64' }
+  ) {
+    $configuration = ($versionRegistry | Where-Object { $_.Path -like '*\Configuration' }).Values
+    $configuration.Platform = $Platform
+    $configuration.VersionToReport = '16.0.99999.99999'
+    foreach ($record in $versionRegistry | Where-Object { $_.Values.PSObject.Properties['Version'] }) {
+      $record.Values.Version = $Build
+    }
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Products[0].Version | Should -Be $Build
+    $observed.Products[0].VersionSource | Should -Be ActiveProductResources
+    $observed.Products[0].Architecture | Should -Be $Architecture
+    ($observed.Products[0].Evidence -join ' ') | Should -Match 'derived from agreeing Version values'
+    @($observed.RegisteredResources | Where-Object { $_.Version -eq $Build }).Count | Should -Be 4
+  }
+
+  It 'prefers valid documented inventory over lower-priority resource versions' {
+    $script:versionRegistry += $documentedVersion
+    $product = (PSFoundation\Get-OfficeInventory).Products[0]
+    $product.Version | Should -Be '16.0.10417.20299'
+    $product.VersionSource | Should -Be ClickToRunInventory
+  }
+
+  It 'falls through when the documented version value is absent and product identity agrees' {
+    $documentedVersion.Values.PSObject.Properties.Remove('OfficePackageVersion')
+    $script:versionRegistry += $documentedVersion
+    $product = (PSFoundation\Get-OfficeInventory).Products[0]
+    $product.Version | Should -Be '16.0.10417.20208'
+    $product.VersionSource | Should -Be ActiveProductResources
+  }
+
+  It 'does not fall through a malformed documented version (<Label>)' -ForEach @(
+    @{ Label = 'blank'; Value = '' }
+    @{ Label = 'null'; Value = $null }
+    @{ Label = 'partial'; Value = '16.0' }
+    @{ Label = 'overflow'; Value = '16.0.99999999999.1' }
+    @{ Label = 'array'; Value = @('16.0.10417.20208') }
+  ) {
+    $documentedVersion.Values.OfficePackageVersion = $Value
+    $script:versionRegistry += $documentedVersion
+    $product = (PSFoundation\Get-OfficeInventory).Products[0]
+    $product.Version | Should -BeNullOrEmpty
+    $product.VersionSource | Should -BeNullOrEmpty
+    ($product.Evidence -join ' ') | Should -Match 'malformed.*OfficePackageVersion'
+  }
+
+  It 'does not fall through conflicting documented product identity' {
+    $documentedVersion.Values.OfficeProductReleaseIds = 'ProPlus2019Volume'
+    $script:versionRegistry += $documentedVersion
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Products[0].Version | Should -BeNullOrEmpty
+    $observed.Unknowns | Should -Contain ConflictingInstalledProductIdentity
+  }
+
+  It 'does not choose arbitrarily between duplicate documented records' {
+    $script:versionRegistry += @($documentedVersion, $documentedVersion)
+    (PSFoundation\Get-OfficeInventory).Products[0].Version | Should -BeNullOrEmpty
+  }
+
+  It 'keeps missing or conflicting active product evidence unknown (<Change>)' -ForEach @(
+    @{ Change = 'MissingVersion' }
+    @{ Change = 'MalformedVersion' }
+    @{ Change = 'MixedVersions' }
+    @{ Change = 'MissingLeaf' }
+    @{ Change = 'DuplicateLeaf' }
+    @{ Change = 'MissingNeutral' }
+    @{ Change = 'NeutralOnly' }
+    @{ Change = 'AdditionalLanguageWithoutVersion' }
+    @{ Change = 'InvalidActive' }
+    @{ Change = 'WrongView' }
+    @{ Change = 'NoProductLeaves' }
+  ) {
+    $leaf = $versionRegistry | Where-Object { $_.Path -eq ($versionProduct + '\de-de') }
+    $parent = $versionRegistry | Where-Object { $_.Path -eq $versionProduct }
+    switch ($Change) {
+      MissingVersion { $leaf.Values.PSObject.Properties.Remove('Version') }
+      MalformedVersion { $leaf.Values.Version = '16.0' }
+      MixedVersions { $leaf.Values.Version = '16.0.10417.20211' }
+      MissingLeaf { $script:versionRegistry = @($versionRegistry | Where-Object { $_.Path -ne $leaf.Path }) }
+      DuplicateLeaf { $script:versionRegistry += $leaf }
+      MissingNeutral { $parent.SubKeys = @('de-de') }
+      NeutralOnly { $parent.SubKeys = @('x-none') }
+      AdditionalLanguageWithoutVersion { $parent.SubKeys += 'en-us' }
+      InvalidActive { ($versionRegistry | Where-Object Path -EQ $versionRoot).Values.ActiveConfiguration = 'invalid' }
+      WrongView { $leaf.View = 'Registry32' }
+      NoProductLeaves { $script:versionRegistry = @($versionRegistry | Where-Object { -not $_.Path.StartsWith($versionProduct + '\') }) }
+    }
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Products[0].Version | Should -BeNullOrEmpty
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 32 -Language de-de -ExcludeApp Groove -Version 16.0.10417.20208
+    $verification = PSFoundation\Test-OfficeDeployment -Configuration $target -Inventory $observed
+    $verification.Compliant | Should -BeFalse
+    $verification.Unknowns | Should -Contain Version
+  }
+
+  It 'ignores inactive resource trees even when they match the desired build' {
+    $inactive = $versionRegistry | Where-Object { $_.Path.StartsWith($versionProduct) } | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    foreach ($record in $inactive) {
+      $record.Path = $record.Path.Replace('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002')
+    }
+    $script:versionRegistry += $inactive
+    ($versionRegistry | Where-Object { $_.Path -eq ($versionProduct + '\de-de') }).Values.PSObject.Properties.Remove('Version')
+    (PSFoundation\Get-OfficeInventory).Products[0].Version | Should -BeNullOrEmpty
+  }
+
+  It 'does not borrow another products version or require a product-year allowlist' {
+    $other = $versionRegistry | Where-Object { $_.Path.StartsWith($versionProduct) } | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    foreach ($record in $other) {
+      $record.Path = $record.Path.Replace('Standard2019Volume', 'Standard2024Volume')
+    }
+    ($versionRegistry | Where-Object { $_.Path -like '*\Configuration' }).Values.ProductReleaseIds = 'Standard2019Volume,Standard2024Volume'
+    $script:versionRegistry += $other
+    ($versionRegistry | Where-Object { $_.Path -eq ($versionProduct + '\de-de') }).Values.PSObject.Properties.Remove('Version')
+    $observed = PSFoundation\Get-OfficeInventory
+    ($observed.Products | Where-Object ProductId -EQ Standard2019Volume).Version | Should -BeNullOrEmpty
+    ($observed.Products | Where-Object ProductId -EQ Standard2024Volume).Version | Should -Be '16.0.10417.20208'
+  }
+
+  It 'reports a compliant repeat run without launching an installer' {
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 32 -Language de-de -ExcludeApp Groove -Version 16.0.10417.20208
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Install -Configuration $target
+    $plan.State | Should -Be Compliant
+    Mock Get-OfficeActivationStatus { [PSCustomObject]@{ Status = 'Licensed' } } -ModuleName PSFoundation
+    Mock Invoke-PSFOfficeConfiguration { throw 'Must not launch ODT' } -ModuleName PSFoundation
+    Mock Assert-PSFOfficeHost { throw 'Must not enter mutation checks' } -ModuleName PSFoundation
+    $result = PSFoundation\Install-Office -Plan $plan -OdtPath C:\Unused\setup.exe -Confirm:$false
+    $result.AlreadyCompliant | Should -BeTrue
+    $result.Changed | Should -BeFalse
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 0 -ModuleName PSFoundation
   }
 }
 
