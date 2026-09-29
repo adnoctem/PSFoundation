@@ -1102,20 +1102,52 @@ function Get-OfficeInventory {
             $registeredLanguages = @($resource[0].SubKeys | Where-Object { $_ -match '^[a-z]{2,3}-[a-z]{2,4}$' -and $_ -ne 'x-none' } | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object -Unique)
           }
         }
+        # Installed UI languages come from the active configuration's per-product
+        # resource registration, which lists the payloads actually present. The
+        # shell language needs a second, agreeing source: a single registered
+        # language is unambiguous on its own, and otherwise ClientCulture counts
+        # only when the registration corroborates it. A ClientCulture outside the
+        # registered set is a conflict and stays unknown - it is never the answer
+        # by itself, and requested XML is never evidence.
+        $languages = $null
+        $primaryLanguage = $null
+        $languageEvidence = 'Languages unknown: no active per-product resource registration'
+        $primaryEvidence = 'PrimaryLanguage unknown: no corroborated shell language'
+        $clientCulture = ([string]$values['ClientCulture']).ToLowerInvariant()
+
+        if ($registeredLanguages.Count) {
+          $languages = @($registeredLanguages)
+          $languageEvidence = "Languages from $($record.View):$productPath subkeys [$($languages -join ',')]"
+
+          if ($languages.Count -eq 1) {
+            $primaryLanguage = $languages[0]
+            $primaryEvidence = "PrimaryLanguage from a single registered language [$primaryLanguage]"
+          }
+          elseif ($clientCulture -and $clientCulture -in $languages) {
+            $primaryLanguage = $clientCulture
+            $primaryEvidence = "PrimaryLanguage from ClientCulture=$clientCulture corroborated by the resource registration"
+          }
+          elseif ($clientCulture) {
+            $primaryEvidence = "PrimaryLanguage unknown: ClientCulture=$clientCulture is not in the registered languages [$($languages -join ',')]"
+          }
+        }
+
         [void]$products.Add([PSCustomObject][ordered]@{
             ProductId           = $id
             Architecture        = $architecture
             Version             = $installedVersion
             Channel             = $channel
-            Languages           = $null
-            PrimaryLanguage     = $null
+            Languages           = $languages
+            PrimaryLanguage     = $primaryLanguage
             RegisteredLanguages = $registeredLanguages
             ExcludeApp          = $excluded
             Evidence            = @(
               "$($record.View):$($record.Path)",
               "Installed version source: ClickToRun/Inventory/Office/16.0:OfficePackageVersion",
               "Telemetry VersionToReport=$($values['VersionToReport']); not installation evidence",
-              "ClientCulture=$($values['ClientCulture']); not proof of complete languages or shell UI"
+              "ClientCulture=$($values['ClientCulture']); not proof of complete languages or shell UI",
+              $languageEvidence,
+              $primaryEvidence
             )
           })
       }
@@ -1233,6 +1265,24 @@ function Get-OfficeInventory {
     }
     $unique += $group.Group[0]
   }
+
+  # Report what this machine's evidence actually cannot establish, rather than a
+  # blanket capability claim. An observed product whose languages or shell
+  # language could not be derived is still a hard limitation; a machine with no
+  # Click-to-Run product to sample reports none, and any post-deployment gap
+  # surfaces as a verification Unknown instead of silently passing.
+  $limitations = New-Object Collections.ArrayList
+
+  foreach ($product in $unique) {
+    if ($null -eq $product.Languages) {
+      [void]$limitations.Add('Languages')
+    }
+
+    if (-not $product.PrimaryLanguage) {
+      [void]$limitations.Add('PrimaryLanguage')
+    }
+  }
+
   [PSCustomObject][ordered]@{
     SchemaVersion           = 1
     MachineId               = Get-PSFOfficeMachineId
@@ -1244,7 +1294,7 @@ function Get-OfficeInventory {
     LanguageEvidence        = @($records | Where-Object { $_.Path -like '*\Common\LanguageResources' } | ForEach-Object {
         [PSCustomObject]@{ View = $_.View; Path = $_.Path; SKULanguage = $_.Values['SKULanguage']; InstallLanguage = $_.Values['InstallLanguage'] }
       })
-    VerificationLimitations = @('Languages', 'PrimaryLanguage')
+    VerificationLimitations = @($limitations | Sort-Object -Unique)
   }
 }
 

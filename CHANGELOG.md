@@ -2,7 +2,8 @@
 
 ### Bug Fixes
 
-* **src:** recognize the native Click-to-Run Licensing Component ([46386e9](https://github.com/adnoctem/PSFoundation/commit/46386e9dba0a9db471227f3431029f324dfaa9d7))
+- **src:** recognize the native Click-to-Run Licensing Component
+  ([46386e9](https://github.com/adnoctem/PSFoundation/commit/46386e9dba0a9db471227f3431029f324dfaa9d7))
 
 ## [1.7.4](https://github.com/adnoctem/PSFoundation/compare/v1.7.3...v1.7.4) (2026-09-29)
 

@@ -205,6 +205,67 @@ Describe 'Imported Office sparse registry values' {
     $observed.Unknowns | Should -Contain ClickToRunInfrastructureWithoutConfiguration
   }
 
+  It 'does not accept a ClientCulture the resource registration contradicts' {
+    # Two registered languages make the shell language ambiguous, so it needs
+    # ClientCulture to agree. A ClientCulture outside the registered set is a
+    # conflict and must stay unknown rather than become the answer.
+    $script:sparseRegistry = @(
+      [PSCustomObject]@{
+        View    = 'Registry64'
+        Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
+        Values  = [PSCustomObject]@{ ProductReleaseIds = 'Standard2019Volume'; Platform = 'x64'; ClientCulture = 'fr-fr' }
+        SubKeys = @()
+      }
+      [PSCustomObject]@{
+        View    = 'Registry64'
+        Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs'
+        Values  = [PSCustomObject]@{ ActiveConfiguration = '69ddc2fc-20c6-4c3e-ad5b-68f318d54698' }
+        SubKeys = @('69ddc2fc-20c6-4c3e-ad5b-68f318d54698')
+      }
+      [PSCustomObject]@{
+        View    = 'Registry64'
+        Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs\69ddc2fc-20c6-4c3e-ad5b-68f318d54698\Standard2019Volume.16'
+        Values  = [PSCustomObject]@{}
+        SubKeys = @('de-de', 'en-us', 'x-none')
+      }
+    )
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Products[0].Languages | Should -Be @('de-de', 'en-us')
+    $observed.Products[0].PrimaryLanguage | Should -BeNullOrEmpty
+    $observed.VerificationLimitations | Should -Contain PrimaryLanguage
+    $observed.VerificationLimitations | Should -Not -Contain Languages
+    ($observed.Products[0].Evidence -join ' ') | Should -BeLike '*ClientCulture=fr-fr is not in the registered languages*'
+  }
+
+  It 'settles an ambiguous shell language when ClientCulture agrees' {
+    $script:sparseRegistry = @(
+      [PSCustomObject]@{
+        View    = 'Registry64'
+        Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
+        Values  = [PSCustomObject]@{ ProductReleaseIds = 'Standard2019Volume'; Platform = 'x64'; ClientCulture = 'en-us' }
+        SubKeys = @()
+      }
+      [PSCustomObject]@{
+        View    = 'Registry64'
+        Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs'
+        Values  = [PSCustomObject]@{ ActiveConfiguration = '69ddc2fc-20c6-4c3e-ad5b-68f318d54698' }
+        SubKeys = @('69ddc2fc-20c6-4c3e-ad5b-68f318d54698')
+      }
+      [PSCustomObject]@{
+        View    = 'Registry64'
+        Path    = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs\69ddc2fc-20c6-4c3e-ad5b-68f318d54698\Standard2019Volume.16'
+        Values  = [PSCustomObject]@{}
+        SubKeys = @('de-de', 'en-us', 'x-none')
+      }
+    )
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Products[0].Languages | Should -Be @('de-de', 'en-us')
+    $observed.Products[0].PrimaryLanguage | Should -Be 'en-us'
+    $observed.VerificationLimitations.Count | Should -Be 0
+  }
+
   It 'does not read Office 2007 App Paths as Click-to-Run residue' {
     $script:sparseRegistry = @(
       [PSCustomObject]@{
@@ -510,8 +571,11 @@ Describe 'Office native registry regression fixtures' {
     $observed.Products[0].Architecture | Should -Be '32'
     $observed.Products[0].RegisteredLanguages | Should -Be @('de-de')
     $observed.Products[0].Version | Should -BeNullOrEmpty
-    $observed.Products[0].Languages | Should -BeNullOrEmpty
-    $observed.Products[0].PrimaryLanguage | Should -BeNullOrEmpty
+    # Derived from the active per-product resource registration; the single
+    # registered language also settles the shell language without ClientCulture.
+    $observed.Products[0].Languages | Should -Be @('de-de')
+    $observed.Products[0].PrimaryLanguage | Should -Be 'de-de'
+    $observed.VerificationLimitations.Count | Should -Be 0
     $observed.Products[0].ExcludeApp | Should -Be @('groove')
   }
 
@@ -548,12 +612,34 @@ Describe 'Office native registry regression fixtures' {
   }
 
   It 'blocks native installation before mutation while required verification is unavailable' {
+    # An installed product whose active configuration cannot be resolved has no
+    # derivable languages. That is a real limitation and must still block before
+    # mutation, even though a machine with nothing unverifiable no longer does.
+    $script:registryFixture = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    ($script:registryFixture | Where-Object Path -EQ 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs').Values.ActiveConfiguration = 'invalid'
     $observed = Get-OfficeInventory
+    $observed.Products[0].Languages | Should -BeNullOrEmpty
+    $observed.Products[0].PrimaryLanguage | Should -BeNullOrEmpty
+    $observed.VerificationLimitations | Should -Contain Languages
+    $observed.VerificationLimitations | Should -Contain PrimaryLanguage
+
     $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de -Version 16.0.10417.20208
     Mock Test-OfficeDeploymentMedia { [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20208' } } }
     $plan = Get-OfficeDeploymentPlan -Action Install -Configuration $target -SourcePath C:\Media -Inventory $observed
     $plan.Eligible | Should -BeFalse
     $plan.Blockers | Should -Contain UnsupportedNativeVerification
+  }
+
+  It 'does not block a clean machine that has nothing unverifiable to observe' {
+    $observed = Get-OfficeInventory
+    $observed.Products.Count | Should -Be 0
+    $observed.VerificationLimitations.Count | Should -Be 0
+
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de -Version 16.0.10417.20208
+    Mock Test-OfficeDeploymentMedia { [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20208' } } }
+    $plan = Get-OfficeDeploymentPlan -Action Install -Configuration $target -SourcePath C:\Media -Inventory $observed
+    $plan.Blockers | Should -Not -Contain UnsupportedNativeVerification
+    $plan.Eligible | Should -BeTrue
   }
 
   It 'reports migration verification limits without false unsupported-MSI blockers' {
@@ -563,7 +649,13 @@ Describe 'Office native registry regression fixtures' {
     Mock Test-OfficeDeploymentMedia { [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20208' } } }
     $plan = Get-OfficeDeploymentPlan -Action Migrate -RemoveMsi -Configuration $target -SourcePath C:\Media -Inventory $observed
     $plan.Blockers | Should -Not -Contain UnsupportedMsiComponent
-    $plan.Blockers | Should -Contain UnsupportedNativeVerification
+    # An MSI-only source has no Click-to-Run product to sample, so nothing
+    # observed is unverifiable and ordinary migration is no longer blocked.
+    # Any post-deployment gap still surfaces as a verification Unknown.
+    $plan.Blockers | Should -Not -Contain UnsupportedNativeVerification
+    $plan.Eligible | Should -BeTrue
+    # Source-side MSI language derivation is not implemented yet, so the
+    # transition remains explicitly unknown rather than assumed.
     $plan.LanguageTransition.Known | Should -BeFalse
   }
 
@@ -877,14 +969,18 @@ Describe 'Office scoped migration pilot' {
     }
   }
 
-  It 'requires opt-in and keeps the native limitation visible' {
+  It 'no longer needs the pilot opt-in to reach an eligible plan' {
+    # Ordinary migration of this MSI-only source is now eligible on its own.
+    # This is the proof that PilotMigration is redundant for the source it was
+    # created for; the flag itself is retired separately.
     $strict = Get-OfficeDeploymentPlan -Action Migrate -Configuration $target -SourcePath $planArgs.SourcePath -RemoveMsi
-    $strict.Blockers | Should -Contain UnsupportedNativeVerification
+    $strict.Blockers | Should -Not -Contain UnsupportedNativeVerification
+    $strict.Eligible | Should -BeTrue
     $strict.SchemaVersion | Should -Be 1
     $pilot = Get-OfficeDeploymentPlan @planArgs
     $pilot.Eligible | Should -BeTrue
     $pilot.SchemaVersion | Should -Be 2
-    $pilot.Before.VerificationLimitations | Should -Contain Languages
+    $pilot.Before.VerificationLimitations.Count | Should -Be 0
     $pilot.LanguageTransition.Known | Should -BeFalse
     $pilot.PilotResources.UiLanguages | Should -Be @('de-de')
     $pilot.PilotResources.ProofingLanguages | Should -Be @('de-de', 'en-us', 'fr-fr', 'it-it')
