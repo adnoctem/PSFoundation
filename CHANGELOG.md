@@ -1,3 +1,11 @@
+## [1.7.4](https://github.com/adnoctem/PSFoundation/compare/v1.7.3...v1.7.4) (2026-09-29)
+
+### Bug Fixes
+
+* **src:** classify Office patch registrations and MSI App Paths ([7858057](https://github.com/adnoctem/PSFoundation/commit/7858057ff12e6209e0ce5ba4b0b470c641a66c16))
+* **tools:** honour SkipChecksums in the prepare phase ([ac480a0](https://github.com/adnoctem/PSFoundation/commit/ac480a0eaa9aef8f4cbfc9043108091f7c6a201c))
+* **tools:** keep the release manifest rewrite format-clean ([450c06d](https://github.com/adnoctem/PSFoundation/commit/450c06d7b84810a741b850119fd3c58213fab5c0))
+
 ## [1.7.3](https://github.com/adnoctem/PSFoundation/compare/v1.7.2...v1.7.3) (2026-09-29)
 
 ### Bug Fixes
