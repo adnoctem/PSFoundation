@@ -64,6 +64,172 @@ Describe 'Imported Office nullable collections' {
   }
 }
 
+Describe 'Imported Office sparse registry values' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  BeforeEach {
+    $script:sparseRegistry = @()
+    Mock Get-PSFOfficeRegistrySnapshot { $script:sparseRegistry } -ModuleName PSFoundation
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' } -ModuleName PSFoundation
+  }
+
+  It 'recognizes the Office 2007 controller without a WindowsInstaller value' {
+    $script:sparseRegistry = @([PSCustomObject]@{
+        View   = 'Registry32'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ENTERPRISE'
+        Values = [PSCustomObject]@{
+          Publisher       = 'Microsoft Corporation'
+          DisplayName     = 'Microsoft Office Enterprise 2007'
+          UninstallString = '"C:\Program Files\Common Files\Microsoft Shared\OFFICE12\Office Setup Controller\setup.exe" /uninstall ENTERPRISE'
+        }
+      })
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 1
+    $observed.Msi[0].ProductCode | Should -Be ENTERPRISE
+    $observed.Msi[0].Version | Should -BeNullOrEmpty
+    $observed.Unknowns.Count | Should -Be 0
+    ($observed | ConvertTo-Json -Depth 8) | Should -Not -Match UninstallString
+  }
+
+  It 'ignores empty and unrelated uninstall keys without assuming MSI evidence' {
+    $script:sparseRegistry = @(
+      [PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\empty'
+        Values = [PSCustomObject]@{}
+      }
+      [PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\unrelated'
+        Values = [PSCustomObject]@{ DisplayName = 'Unrelated application' }
+      }
+    )
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 0
+    $observed.Products.Count | Should -Be 0
+    $observed.Unknowns.Count | Should -Be 0
+  }
+
+  It 'keeps unclassified Office registrations blocked when installer evidence is absent' {
+    $script:sparseRegistry = @([PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\unknown-office'
+        Values = [PSCustomObject]@{
+          Publisher   = 'Microsoft Corporation'
+          DisplayName = 'Microsoft Office Unknown Component'
+        }
+      })
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Msi.Count | Should -Be 0
+    $observed.Unknowns | Should -Contain 'UnclassifiedOfficeRegistration:unknown-office'
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume
+    (PSFoundation\Get-OfficeDeploymentPlan -Action Install -Configuration $target -Inventory $observed).Eligible | Should -BeFalse
+  }
+
+  It 'preserves incomplete Click-to-Run registration as unknown evidence' {
+    $script:sparseRegistry = @([PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
+        Values = [PSCustomObject]@{}
+      })
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Unknowns | Should -Contain IncompleteClickToRunRegistration
+  }
+
+  It 'preserves missing configuration, installed-version and language fields as unknown' {
+    $script:sparseRegistry = @(
+      [PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Office\ClickToRun\Configuration'
+        Values = [PSCustomObject]@{ ProductReleaseIds = 'Standard2019Volume' }
+      }
+      [PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Office\ClickToRun\Inventory\Office\16.0'
+        Values = [PSCustomObject]@{ OfficeProductReleaseIds = 'Standard2019Volume' }
+      }
+      [PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs'
+        Values = [PSCustomObject]@{}
+      }
+      [PSCustomObject]@{
+        View   = 'Registry64'
+        Path   = 'SOFTWARE\Microsoft\Office\16.0\Common\LanguageResources'
+        Values = [PSCustomObject]@{ SKULanguage = 1031 }
+      }
+    )
+
+    $observed = PSFoundation\Get-OfficeInventory
+    $observed.Products.Count | Should -Be 1
+    $observed.Products[0].Architecture | Should -BeNullOrEmpty
+    $observed.Products[0].Version | Should -BeNullOrEmpty
+    $observed.Products[0].Channel | Should -BeNullOrEmpty
+    $observed.Products[0].Languages | Should -BeNullOrEmpty
+    $observed.Products[0].RegisteredLanguages.Count | Should -Be 0
+    ($null -eq $observed.Products[0].ExcludeApp) | Should -BeTrue
+    $observed.RegisteredResources[0].ActiveConfiguration | Should -BeNullOrEmpty
+    $observed.LanguageEvidence[0].InstallLanguage | Should -BeNullOrEmpty
+    $observed.LanguageEvidence[0].SKULanguage | Should -Be 1031
+
+    $script:sparseRegistry[0].Values | Add-Member -NotePropertyName 'Standard2019Volume.ExcludedApps' -NotePropertyValue ''
+    $observed = PSFoundation\Get-OfficeInventory
+    ($null -eq $observed.Products[0].ExcludeApp) | Should -BeFalse
+    $observed.Products[0].ExcludeApp.Count | Should -Be 0
+  }
+
+  It 'plans the MSI-only Office 2007 pilot with empty Click-to-Run collections' {
+    $script:sparseRegistry = Get-Content "$PSScriptRoot/fixtures/office/office2007-registry.json" -Raw | ConvertFrom-Json
+    Mock Test-PSFOfficePilotHost { $true } -ModuleName PSFoundation
+    Mock Test-OfficeDeploymentMedia {
+      [PSCustomObject]@{
+        Valid       = $true
+        Fingerprint = 'synthetic-media'
+        Manifest    = [PSCustomObject]@{ Version = '16.0.10417.20211' }
+      }
+    } -ModuleName PSFoundation
+
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de
+    $planArgs = @{
+      Action         = 'Migrate'
+      Configuration  = $target
+      SourcePath     = 'C:\Media\Office2019'
+      RemoveMsi      = $true
+      PilotMigration = $true
+    }
+
+    $plan = PSFoundation\Get-OfficeDeploymentPlan @planArgs
+    $plan.Eligible | Should -BeTrue
+    $plan.LanguageTransition.Known | Should -BeFalse
+    $plan.LanguageTransition.PrimaryBefore.Count | Should -Be 0
+    $plan.Configuration.Version | Should -Be '16.0.10417.20211'
+
+    $plan = PSFoundation\Get-OfficeDeploymentPlan @planArgs -RemoveProductId Standard2019Volume
+    $plan.Eligible | Should -BeFalse
+    $plan.Blockers | Should -Contain StaleRemovalSelection
+  }
+
+  It 'reads the Office <Release> fixture through the strict imported module' -ForEach @(
+    @{ Release = '2007'; MsiExpected = $true; ProductCount = 0; RelatedCount = 2 }
+    @{ Release = '2019'; MsiExpected = $false; ProductCount = 1; RelatedCount = 5 }
+  ) {
+    $script:sparseRegistry = Get-Content "$PSScriptRoot/fixtures/office/office$Release-registry.json" -Raw | ConvertFrom-Json
+
+    $observed = PSFoundation\Get-OfficeInventory
+    ($observed.Msi.Count -gt 0) | Should -Be $MsiExpected
+    $observed.Products.Count | Should -Be $ProductCount
+    $observed.RelatedComponents.Count | Should -Be $RelatedCount
+    $observed.Unknowns.Count | Should -Be 0
+  }
+}
+
 Describe 'Office configuration and authority contracts' {
   BeforeEach {
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Version 16.0.17932.20162

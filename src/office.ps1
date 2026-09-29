@@ -989,7 +989,26 @@ function Get-OfficeInventory {
   $unknowns = New-Object Collections.ArrayList
   $records = @()
   try {
-    $records = @(Get-PSFOfficeRegistrySnapshot)
+    $records = @(Get-PSFOfficeRegistrySnapshot | ForEach-Object {
+        # Registry values are optional. Dictionary indexers preserve missing
+        # evidence as null even under StrictMode; do not invent MSI or locale data.
+        $values = @{}
+        foreach ($property in $_.Values.PSObject.Properties) {
+          $values[$property.Name] = $property.Value
+        }
+
+        $subKeys = @()
+        if ($_.PSObject.Properties['SubKeys']) {
+          $subKeys = @($_.SubKeys)
+        }
+
+        [PSCustomObject]@{
+          View    = $_.View
+          Path    = $_.Path
+          Values  = $values
+          SubKeys = $subKeys
+        }
+      })
   }
   catch {
     [void]$unknowns.Add('RegistryDiscoveryFailed')
@@ -1004,31 +1023,31 @@ function Get-OfficeInventory {
         View                = $_.View
         Path                = $_.Path
         SubKeys             = @($_.SubKeys)
-        ActiveConfiguration = $_.Values.ActiveConfiguration
+        ActiveConfiguration = $_.Values['ActiveConfiguration']
       }
     })
   foreach ($record in $records) {
     $values = $record.Values
     if ($record.Path -like '*ClickToRun\Configuration') {
-      $ids = @(([string]$values.ProductReleaseIds -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+      $ids = @(([string]$values['ProductReleaseIds'] -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
       $installed = @($installedRecords | Where-Object { $_.View -eq $record.View })
       $installedVersion = $null
       if ($installed.Count -eq 1) {
-        $installedIds = @(([string]$installed[0].Values.OfficeProductReleaseIds -split '[,;]') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $installedIds = @(([string]$installed[0].Values['OfficeProductReleaseIds'] -split '[,;]') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         if ((@($ids | Sort-Object) -join ',') -ne (@($installedIds | Sort-Object) -join ',')) {
           [void]$unknowns.Add('ConflictingInstalledProductIdentity')
         }
-        $installedVersion = $installed[0].Values.OfficePackageVersion
+        $installedVersion = $installed[0].Values['OfficePackageVersion']
       }
       if (-not $ids.Count) {
         [void]$unknowns.Add('IncompleteClickToRunRegistration')
       }
       foreach ($id in $ids) {
         $architecture = $null
-        if ($values.Platform -eq 'x64') {
+        if ($values['Platform'] -eq 'x64') {
           $architecture = '64'
         }
-        elseif ($values.Platform -eq 'x86') {
+        elseif ($values['Platform'] -eq 'x86') {
           $architecture = '32'
         }
         $channels = @{
@@ -1041,21 +1060,21 @@ function Get-OfficeInventory {
         }
         $channel = $null
         foreach ($entry in $channels.GetEnumerator()) {
-          if ([string]$values.CDNBaseUrl -like "*$($entry.Key)*") {
+          if ([string]$values['CDNBaseUrl'] -like "*$($entry.Key)*") {
             $channel = $entry.Value
           }
         }
         $excluded = $null
-        if ($values.PSObject.Properties.Name -contains "$id.ExcludedApps") {
-          $excluded = @(([string]$values."$id.ExcludedApps" -split ',') | Where-Object { $_ } | Sort-Object)
+        if ($values.ContainsKey("$id.ExcludedApps")) {
+          $excluded = @(([string]$values["$id.ExcludedApps"] -split ',') | Where-Object { $_ } | Sort-Object)
         }
         # These are registered candidates, not proof of complete installed UI
         # resources or the initial shell language. Ignore inactive configurations.
         $registeredLanguages = @()
         $releaseRoot = 'SOFTWARE\Microsoft\Office\ClickToRun\ProductReleaseIDs'
         $active = @($records | Where-Object { $_.View -eq $record.View -and $_.Path -eq $releaseRoot })
-        if ($active.Count -eq 1 -and [string]$active[0].Values.ActiveConfiguration -match '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') {
-          $productPath = $releaseRoot + '\' + $active[0].Values.ActiveConfiguration + '\' + $id + '.16'
+        if ($active.Count -eq 1 -and [string]$active[0].Values['ActiveConfiguration'] -match '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') {
+          $productPath = $releaseRoot + '\' + $active[0].Values['ActiveConfiguration'] + '\' + $id + '.16'
           $resource = @($records | Where-Object { $_.View -eq $record.View -and $_.Path -eq $productPath })
           if ($resource.Count -eq 1) {
             $registeredLanguages = @($resource[0].SubKeys | Where-Object { $_ -match '^[a-z]{2,3}-[a-z]{2,4}$' -and $_ -ne 'x-none' } | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object -Unique)
@@ -1073,29 +1092,29 @@ function Get-OfficeInventory {
             Evidence            = @(
               "$($record.View):$($record.Path)",
               "Installed version source: ClickToRun/Inventory/Office/16.0:OfficePackageVersion",
-              "Telemetry VersionToReport=$($values.VersionToReport); not installation evidence",
-              "ClientCulture=$($values.ClientCulture); not proof of complete languages or shell UI"
+              "Telemetry VersionToReport=$($values['VersionToReport']); not installation evidence",
+              "ClientCulture=$($values['ClientCulture']); not proof of complete languages or shell UI"
             )
           })
       }
     }
     elseif ($record.Path -like '*\Uninstall\*') {
       $keyName = Split-Path $record.Path -Leaf
-      $isMicrosoft = $values.Publisher -match '^Microsoft(?: Corporation)?$'
+      $isMicrosoft = $values['Publisher'] -match '^Microsoft(?: Corporation)?$'
       $officeCode = $keyName -match '^\{9[01](12|14|15|16)0000-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$'
-      $officeName = $values.DisplayName -match 'Office|Visio|Project|Access|SharePoint Designer|InfoPath|Lync'
-      $controller = $values.UninstallString -match '\\OFFICE(12|14|15|16)\\Office Setup Controller\\setup\.exe"?\s+/uninstall\s'
+      $officeName = $values['DisplayName'] -match 'Office|Visio|Project|Access|SharePoint Designer|InfoPath|Lync'
+      $controller = $values['UninstallString'] -match '\\OFFICE(12|14|15|16)\\Office Setup Controller\\setup\.exe"?\s+/uninstall\s'
       $infrastructure = $keyName -match '^\{9[01]160000-(008C|008F|00DD)-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{7}FF1CE\}$' -and
-      $values.DisplayName -match '^Office 16 Click-to-Run (Licensing|Extensibility|Localization) Component(?: 64-bit Registration)?$'
-      $addIn = $values.WindowsInstaller -eq 1 -and $values.DisplayName -in @(
+      $values['DisplayName'] -match '^Office 16 Click-to-Run (Licensing|Extensibility|Localization) Component(?: 64-bit Registration)?$'
+      $addIn = $values['WindowsInstaller'] -eq 1 -and $values['DisplayName'] -in @(
         'Microsoft Teams Meeting Add-in for Microsoft Office',
         'Microsoft Office Live Add-in 1.5'
       )
       if ($isMicrosoft -and ($infrastructure -or $addIn)) {
         [void]$related.Add([PSCustomObject]@{
             ProductCode  = $keyName
-            Name         = $values.DisplayName
-            Version      = $values.DisplayVersion
+            Name         = $values['DisplayName']
+            Version      = $values['DisplayVersion']
             RegistryView = $record.View
             Role         = if ($infrastructure) { 'ClickToRunInfrastructure' } else { 'AddIn' }
           })
@@ -1104,15 +1123,15 @@ function Get-OfficeInventory {
         }
         continue
       }
-      if ($isMicrosoft -and ($officeCode -or ($officeName -and ($values.WindowsInstaller -eq 1 -or $controller)))) {
+      if ($isMicrosoft -and ($officeCode -or ($officeName -and ($values['WindowsInstaller'] -eq 1 -or $controller)))) {
         $resourceKind = 'ProductOrComponent'
-        if (($officeCode -and $keyName -match '^\{[^-]+-(001F|002C)-') -or $values.DisplayName -match '\bProof(?:ing)?\b') {
+        if (($officeCode -and $keyName -match '^\{[^-]+-(001F|002C)-') -or $values['DisplayName'] -match '\bProof(?:ing)?\b') {
           $resourceKind = 'Proofing'
         }
-        elseif ($values.DisplayName -match 'Language Interface Pack') {
+        elseif ($values['DisplayName'] -match 'Language Interface Pack') {
           $resourceKind = 'LanguageInterfacePack'
         }
-        elseif ($values.DisplayName -match 'Language Pack|MUI') {
+        elseif ($values['DisplayName'] -match 'Language Pack|MUI') {
           $resourceKind = 'LanguageResource'
         }
         $languageId = $null
@@ -1126,15 +1145,15 @@ function Get-OfficeInventory {
         }
         [void]$msi.Add([PSCustomObject]@{
             ProductCode  = $keyName
-            Name         = $values.DisplayName
-            Version      = $values.DisplayVersion
+            Name         = $values['DisplayName']
+            Version      = $values['DisplayVersion']
             RegistryView = $record.View
             LanguageId   = $languageId
             ResourceKind = $resourceKind
           })
       }
-      elseif ($isMicrosoft -and $officeName -and $values.DisplayName -notmatch 'Update|Hotfix|Security|Language|Proofing' -and
-        $values.UninstallString -notmatch 'OfficeClickToRun\.exe') {
+      elseif ($isMicrosoft -and $officeName -and $values['DisplayName'] -notmatch 'Update|Hotfix|Security|Language|Proofing' -and
+        $values['UninstallString'] -notmatch 'OfficeClickToRun\.exe') {
         [void]$unknowns.Add("UnclassifiedOfficeRegistration:$keyName")
       }
     }
@@ -1156,7 +1175,7 @@ function Get-OfficeInventory {
     Unknowns                = @($unknowns | Sort-Object -Unique)
     RegisteredResources     = $registeredResources
     LanguageEvidence        = @($records | Where-Object { $_.Path -like '*\Common\LanguageResources' } | ForEach-Object {
-        [PSCustomObject]@{ View = $_.View; Path = $_.Path; SKULanguage = $_.Values.SKULanguage; InstallLanguage = $_.Values.InstallLanguage }
+        [PSCustomObject]@{ View = $_.View; Path = $_.Path; SKULanguage = $_.Values['SKULanguage']; InstallLanguage = $_.Values['InstallLanguage'] }
       })
     VerificationLimitations = @('Languages', 'PrimaryLanguage')
   }
@@ -1507,7 +1526,7 @@ function Get-OfficeDeploymentPlan {
     if ($others.Count -and -not ($state -eq 'Compliant' -and -not $selection.Count -and -not $Inventory.Msi.Count)) {
       [void]$blockers.Add('UnapprovedProducts')
     }
-    if (@($selection | Where-Object { $_ -notin @($Inventory.Products.ProductId) }).Count) {
+    if (@($selection | Where-Object { $_ -notin @($Inventory.Products | ForEach-Object { $_.ProductId }) }).Count) {
       [void]$blockers.Add('StaleRemovalSelection')
     }
     if ($Inventory.Msi.Count -and -not $RemoveMsi) {
@@ -1579,7 +1598,7 @@ function Get-OfficeDeploymentPlan {
       After         = @($target.Language)
       Added         = @($target.Language | Where-Object { $_ -notin $sourceLanguages })
       Removed       = @($sourceLanguages | Where-Object { $_ -notin $target.Language })
-      PrimaryBefore = @($Inventory.Products.PrimaryLanguage | Where-Object { $_ } | Sort-Object -Unique)
+      PrimaryBefore = @($Inventory.Products | ForEach-Object { $_.PrimaryLanguage } | Where-Object { $_ } | Sort-Object -Unique)
       PrimaryAfter  = $target.PrimaryLanguage
     }
     if (-not $languageKnown) {
@@ -2982,7 +3001,7 @@ function Test-PSFOfficePostcondition {
     }
   }
   if ($Plan.Action -eq 'Remove') {
-    $remaining = @($After.Products.ProductId)
+    $remaining = @($After.Products | ForEach-Object { $_.ProductId })
     $retained = @($Plan.Before.Products | Where-Object { $_.ProductId -notin $Plan.RemoveProductId })
     $missing = @($retained | Where-Object { $_.ProductId -notin $remaining })
     $changed = @($retained | Where-Object {
@@ -3074,7 +3093,7 @@ function Invoke-PSFOfficeWorkflow {
       [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
     }
   }
-  $absent = $ExpectedAction -eq 'Remove' -and -not @($fresh.RemoveProductId | Where-Object { $_ -in @($fresh.Before.Products.ProductId) }).Count
+  $absent = $ExpectedAction -eq 'Remove' -and -not @($fresh.RemoveProductId | Where-Object { $_ -in @($fresh.Before.Products | ForEach-Object { $_.ProductId }) }).Count
   if ($absent -or ($fresh.State -eq 'Compliant' -and $ExpectedAction -in @(
         'Install',
         'Migrate',
@@ -3398,10 +3417,10 @@ function Invoke-PSFOfficeRecovery {
     }
     return $result
   }
-  $currentIds = @($inventory.Products.ProductId)
-  $approvedIds = @($record.Plan.Before.Products.ProductId)
+  $currentIds = @($inventory.Products | ForEach-Object { $_.ProductId })
+  $approvedIds = @($record.Plan.Before.Products | ForEach-Object { $_.ProductId })
   if ($inventory.Unknowns.Count -or @($currentIds | Where-Object { $_ -notin $approvedIds -and $_ -ne $target.TargetProductId }).Count -or
-    @($inventory.Msi | Where-Object { $_.ProductCode -notin @($record.Plan.Before.Msi.ProductCode) }).Count) {
+    @($inventory.Msi | Where-Object { $_.ProductCode -notin @($record.Plan.Before.Msi | ForEach-Object { $_.ProductCode }) }).Count) {
     $result.Status = 'Blocked'
     $result.ReasonCode = 'Conflict'
     $result.WrapperExitCode = 1
