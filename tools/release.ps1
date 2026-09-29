@@ -135,6 +135,104 @@ function Split-ReleaseVersion {
   }
 }
 
+function Get-ManifestAlignmentWidth {
+  <#
+    Returns the width the repository formatter aligns assignment operators to
+    within one indentation block: the longest key plus its padding. Returns 0
+    when the block holds no other assignment to align against.
+  #>
+  [CmdletBinding()]
+  [OutputType([int])]
+  param (
+    [Parameter(Mandatory = $true)]
+    [string]$Content,
+
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyString()]
+    [string]$Indent
+  )
+
+  $width = 0
+  foreach ($match in [regex]::Matches($Content, "(?m)^$([regex]::Escape($Indent))([A-Za-z_]\w*)( *)=")) {
+    $candidate = $match.Groups[1].Value.Length + $match.Groups[2].Value.Length
+    if ($candidate -gt $width) {
+      $width = $candidate
+    }
+  }
+
+  $width
+}
+
+function Write-ReleaseManifest {
+  <#
+    Synchronizes the module manifest with a resolved release version without
+    reformatting it. semantic-release runs the prepare phase on every release,
+    so the rewritten manifest must still satisfy the repository's own format
+    gate: UTF-8 with BOM, and assignment operators aligned per indentation
+    block. Only the quoted value is rewritten, which leaves the existing
+    alignment untouched; an uncommented Prerelease key is a new assignment and
+    is padded to its block's width instead. Returns the rewritten content.
+  #>
+  [CmdletBinding()]
+  [OutputType([string])]
+  param (
+    [Parameter(Mandatory = $true)]
+    [string]$Path,
+
+    [Parameter(Mandatory = $true)]
+    [string]$CoreVersion,
+
+    [AllowEmptyString()]
+    [string]$Prerelease = ''
+  )
+
+  $content = Get-Content -LiteralPath $Path -Raw
+
+  $rootIndentMatch = [regex]::Match($content, '(?m)^( *)RootModule *=')
+  if (-not $rootIndentMatch.Success) {
+    throw "Could not determine module manifest indentation (RootModule key not found): $Path"
+  }
+  $topLevelIndent = [regex]::Escape($rootIndentMatch.Groups[1].Value)
+
+  # Capture the spacing around '=' and put it back unchanged. Collapsing it to a
+  # single space is what left main failing its own format check after a release.
+  $moduleVersionPattern = "(?m)^($topLevelIndent)(ModuleVersion)( *= *)'[^']*'"
+  if (-not [regex]::IsMatch($content, $moduleVersionPattern)) {
+    throw "Could not locate top-level ModuleVersion in module manifest: $Path"
+  }
+  $content = [regex]::Replace($content, $moduleVersionPattern, "`${1}`${2}`${3}'$CoreVersion'")
+
+  if ($Prerelease) {
+    $prereleasePattern = "(?m)^( *)# *Prerelease *= *'[^']*'|(?m)^( *)Prerelease( *= *)'[^']*'"
+    $prereleaseMatch = [regex]::Match($content, $prereleasePattern)
+    if (-not $prereleaseMatch.Success) {
+      throw "Could not locate Prerelease key in module manifest: $Path"
+    }
+    # Uncommenting introduces an assignment the block has never aligned, so its
+    # operator column comes from the sibling keys rather than from the comment.
+    $indent = $prereleaseMatch.Groups[1].Value
+    if (-not $indent) {
+      $indent = $prereleaseMatch.Groups[2].Value
+    }
+    $padding = ' ' * ([Math]::Max(1, (Get-ManifestAlignmentWidth -Content $content -Indent $indent) - 'Prerelease'.Length))
+    $content = $content.Remove($prereleaseMatch.Index, $prereleaseMatch.Length).Insert(
+      $prereleaseMatch.Index, "$indent" + 'Prerelease' + $padding + "= '$Prerelease'")
+  }
+  else {
+    $livePrereleasePattern = "(?m)^( *)Prerelease *= *'[^']*'"
+    $livePrereleaseMatch = [regex]::Match($content, $livePrereleasePattern)
+    if ($livePrereleaseMatch.Success) {
+      $content = $content.Remove($livePrereleaseMatch.Index, $livePrereleaseMatch.Length).Insert(
+        $livePrereleaseMatch.Index, $livePrereleaseMatch.Groups[1].Value + "# Prerelease = ''")
+    }
+  }
+
+  # .psd1 requires UTF-8 with BOM for Windows PowerShell 5.1 parsing, the same
+  # encoding tools/format.ps1 and tools/dependencies.ps1 write.
+  [IO.File]::WriteAllText($Path, $content, (New-Object Text.UTF8Encoding($true)))
+  $content
+}
+
 function Write-DistChecksum {
   [CmdletBinding()]
   param (
@@ -190,39 +288,7 @@ if ($Prepare) {
   }
   $manifestFile = $manifestFiles[0].FullName
 
-  $manifestContent = Get-Content -LiteralPath $manifestFile -Raw
-
-  $rootIndentMatch = [regex]::Match($manifestContent, "(?m)^(\s*)RootModule\s*=\s*")
-  if (-not $rootIndentMatch.Success) {
-    throw "Could not determine module manifest indentation (RootModule key not found): $manifestFile"
-  }
-  $topLevelIndent = [regex]::Escape($rootIndentMatch.Groups[1].Value)
-
-  $moduleVersionPattern = "(?m)^($topLevelIndent)(ModuleVersion)\s*=\s*'[^']*'"
-  if (-not [regex]::IsMatch($manifestContent, $moduleVersionPattern)) {
-    throw "Could not locate top-level ModuleVersion in module manifest: $manifestFile"
-  }
-  $manifestContent = [regex]::Replace($manifestContent, $moduleVersionPattern, "`$1`$2 = '$($versionInfo.CoreVersion)'")
-
-  if ($versionInfo.Prerelease) {
-    $prereleasePattern = "(?m)^(\s*)[# ]*Prerelease\s*=\s*'[^']*'"
-    if (-not [regex]::IsMatch($manifestContent, $prereleasePattern)) {
-      throw "Could not locate Prerelease key in module manifest: $manifestFile"
-    }
-    $manifestContent = [regex]::Replace($manifestContent, $prereleasePattern, "`$1Prerelease = '$($versionInfo.Prerelease)'")
-  }
-  else {
-    $livePrereleasePattern = "(?m)^(\s*)Prerelease\s*=\s*'[^']*'(\r\n|\r|\n)"
-    $livePrereleaseMatch = [regex]::Match($manifestContent, $livePrereleasePattern)
-    if ($livePrereleaseMatch.Success) {
-      $prereleaseIndent = $livePrereleaseMatch.Groups[1].Value
-      $prereleaseEol = $livePrereleaseMatch.Groups[2].Value
-      $manifestContent = [regex]::Replace($manifestContent, $livePrereleasePattern, "$prereleaseIndent# Prerelease = ''$prereleaseEol")
-    }
-  }
-
-  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-  [System.IO.File]::WriteAllText($manifestFile, $manifestContent, $utf8NoBom)
+  $null = Write-ReleaseManifest -Path $manifestFile -CoreVersion $versionInfo.CoreVersion -Prerelease ([string]$versionInfo.Prerelease)
   Write-Output "Manifest version set to $Version ($manifestFile)"
 
   if (-not $SkipBuild) {
