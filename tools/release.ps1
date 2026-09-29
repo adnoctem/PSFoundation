@@ -299,7 +299,7 @@ if ($Prepare) {
     }
   }
 
-  Write-DistChecksum
+  Write-DistChecksum -Skip:$SkipChecksums
   Write-Output 'Prepare phase complete.'
   exit 0
 }

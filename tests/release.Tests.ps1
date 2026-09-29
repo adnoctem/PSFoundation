@@ -8,6 +8,7 @@ BeforeAll {
   $ast = [Management.Automation.Language.Parser]::ParseFile(
     (Join-Path $PSScriptRoot '../tools/release.ps1'), [ref]$tokens, [ref]$parseErrors
   )
+  $script:releaseAst = $ast
   foreach ($name in @('Write-DistChecksum', 'Get-ManifestAlignmentWidth', 'Write-ReleaseManifest')) {
     $helper = $ast.Find({
         param($node)
@@ -76,6 +77,27 @@ Describe 'Release archive collection handling' {
       $lines = @(Get-Content -LiteralPath $checksumPath)
       $lines.Count | Should -Be $Number
       $lines[0] | Should -Match '^[0-9A-F]{64}  synthetic0\.zip$'
+    }
+  }
+}
+
+Describe 'Release checksum switch propagation' {
+  It 'honours SkipChecksums at every call site' {
+    Set-StrictMode -Version Latest
+    # The prepare phase used to call the helper bare, so -SkipChecksums was
+    # silently ignored there. Both modes must respect the documented switch.
+    $calls = @($releaseAst.FindAll({
+          param($node)
+          $node -is [Management.Automation.Language.CommandAst] -and
+          $node.GetCommandName() -eq 'Write-DistChecksum'
+        }, $true))
+
+    $calls.Count | Should -BeGreaterThan 1
+    foreach ($call in $calls) {
+      $parameters = @($call.CommandElements |
+          Where-Object { $_ -is [Management.Automation.Language.CommandParameterAst] } |
+          ForEach-Object { $_.ParameterName })
+      $parameters | Should -Contain 'Skip' -Because "'$($call.Extent.Text)' must pass the switch through"
     }
   }
 }
