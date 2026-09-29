@@ -23,6 +23,7 @@ $publicAliases = @(
 $publicFunctions = @(
   # office.ps1
   'Resolve-OfficeDeploymentToolSource',
+  'Test-OfficeDeploymentToolSourceAvailability',
   'Install-OfficeDeploymentTool',
   'Test-OfficeDeploymentTool',
   'Get-OfficeDeploymentToolHelp',

@@ -145,9 +145,6 @@ function Switch-OfficeDeployment {
       Return a read-only preview without journals, staging, or installer invocation.
     .PARAMETER ProductKey
       Optional SecureString volume key; never serialized or passed on a command line.
-    .PARAMETER PilotMigration
-      Explicitly execute a matching scoped Office 2007 migration pilot plan.
-      Unverified results require manual review; pilot recovery is not supported.
     .EXAMPLE
       $plan | Switch-OfficeDeployment -OdtPath C:\ODT\setup.exe -WhatIf
   #>
@@ -173,10 +170,7 @@ function Switch-OfficeDeployment {
     $DryRun,
 
     [Security.SecureString]
-    $ProductKey,
-
-    [switch]
-    $PilotMigration
+    $ProductKey
   )
 
   process {
@@ -189,7 +183,6 @@ function Switch-OfficeDeployment {
       DryRun         = [bool]$DryRun
       ForceCloseApps = [bool]$ForceCloseApps
       ProductKey     = $ProductKey
-      PilotMigration = [bool]$PilotMigration
     }
     Invoke-PSFOfficeWorkflow @parameters
   }
@@ -1501,10 +1494,6 @@ function Get-OfficeDeploymentPlan {
       Validated update settings or application preferences, specific to the action.
     .PARAMETER Inventory
       Optional observation for offline planning. Never trusted during execution.
-    .PARAMETER PilotMigration
-      Scope a German Office Enterprise 2007 to Standard 2019 x64 pilot on Windows
-      10 build 19045. Requires explicit de-de configuration and RemoveMsi consent.
-      Checks the local host even when Inventory is supplied. Does not grant execution consent.
     .EXAMPLE
       Get-OfficeDeploymentPlan -Action Install -Configuration $target -SourcePath C:\Media\Office
     .EXAMPLE
@@ -1547,15 +1536,9 @@ function Get-OfficeDeploymentPlan {
     $Settings = @{},
 
     [object]
-    $Inventory,
-
-    [switch]
-    $PilotMigration
+    $Inventory
   )
 
-  if ($PilotMigration -and $Action -ne 'Migrate') {
-    Stop-PSFOfficeOperation InvalidAuthority 'PilotMigration belongs only to Migrate.'
-  }
   if ($null -eq $RemoveProductId) { $RemoveProductId = @() }
   if ($null -eq $Language) { $Language = @() }
   if ($Action -notin @('Remove', 'Migrate') -and ($RemoveProductId.Count -or $RemoveMsi)) {
@@ -1691,15 +1674,7 @@ function Get-OfficeDeploymentPlan {
     }
   }
   $needsMedia = $Action -in @('Install', 'Migrate', 'Update', 'AddLanguage', 'SetApplicationSelection') -and $state -ne 'Compliant'
-  $pilot = $null
-  if ($PilotMigration) {
-    $pilot = Get-PSFOfficePilotAssessment -Configuration $target -Inventory $Inventory
-    foreach ($blocker in $pilot.Blockers) {
-      [void]$blockers.Add($blocker)
-    }
-    [void]$warnings.Add('Pilot: German UI with German, English, French and Italian companion proofing is intended, not verified. Review AppliedUnverified manually; do not rerun or resume automatically.')
-  }
-  $unsupportedVerification = @($Inventory.VerificationLimitations | Where-Object { $_ -and (-not $PilotMigration -or $_ -notin @('Languages', 'PrimaryLanguage')) })
+  $unsupportedVerification = @($Inventory.VerificationLimitations | Where-Object { $_ })
   if ($Action -in @('Install', 'Migrate') -and $state -ne 'Compliant' -and $unsupportedVerification.Count) {
     [void]$blockers.Add('UnsupportedNativeVerification')
     [void]$warnings.Add('The native inventory backend cannot verify: ' + ($Inventory.VerificationLimitations -join ', ') + '. No deployment may start until these postconditions can be verified.')
@@ -1753,11 +1728,6 @@ function Get-OfficeDeploymentPlan {
     LanguageTransition   = $transition
     MediaFingerprint     = if ($media -and $media.Valid) { $media.Fingerprint } else { $null }
   }
-  if ($PilotMigration) {
-    $plan.SchemaVersion = 2
-    $plan | Add-Member -NotePropertyName PilotMigration -NotePropertyValue $true
-    $plan | Add-Member -NotePropertyName PilotResources -NotePropertyValue $pilot.Resources
-  }
   $plan
 }
 
@@ -1768,10 +1738,7 @@ function Confirm-PSFOfficePlan {
     $Plan,
 
     [string]
-    $Action,
-
-    [bool]
-    $PilotMigration = $false
+    $Action
   )
 
   $fields = @(
@@ -1793,16 +1760,8 @@ function Confirm-PSFOfficePlan {
     'LanguageTransition',
     'MediaFingerprint'
   )
-  $schema = 1
-  if ($PilotMigration) {
-    $schema = 2
-    $fields += @('PilotMigration', 'PilotResources')
-    if ($Action -ne 'Migrate' -or $Plan.PilotMigration -isnot [bool] -or -not $Plan.PilotMigration) {
-      Stop-PSFOfficeOperation InvalidAuthority 'Pilot execution requires a matching pilot plan and explicit consent.'
-    }
-  }
   Assert-PSFOfficeField $Plan $fields $fields
-  if ($Plan.SchemaVersion -ne $schema -or $Plan.Action -ne $Action -or $Plan.RemoveMsi -isnot [bool]) {
+  if ($Plan.SchemaVersion -ne 1 -or $Plan.Action -ne $Action -or $Plan.RemoveMsi -isnot [bool]) {
     Stop-PSFOfficeOperation InvalidAuthority 'Plan schema, action, or removal authority does not match this command.'
   }
   $current = Get-OfficeInventory
@@ -1818,12 +1777,8 @@ function Confirm-PSFOfficePlan {
     Language        = @($Plan.Language)
     Settings        = $Plan.Settings
     Inventory       = $current
-    PilotMigration  = $PilotMigration
   }
   $fresh = Get-OfficeDeploymentPlan @parameters
-  if ($PilotMigration -and (Get-PSFOfficeFingerprint $Plan.PilotResources) -ne (Get-PSFOfficeFingerprint $fresh.PilotResources)) {
-    Stop-PSFOfficeOperation InvalidAuthority 'Pilot resource intent differs from the reviewed profile.'
-  }
   if ($Plan.MediaFingerprint -ne $fresh.MediaFingerprint) {
     Stop-PSFOfficeOperation StaleMedia 'Prepared media changed; create a new plan.'
   }
@@ -1850,6 +1805,44 @@ function Resolve-OfficeDeploymentToolSource {
     Publisher    = 'Microsoft Corporation'
     Reference    = 'https://www.microsoft.com/en-us/download/details.aspx?id=49117'
     ReviewedDate = '2026-09-27'
+  }
+}
+
+function Test-OfficeDeploymentToolSourceAvailability {
+  <#
+    .SYNOPSIS
+      Checks whether the reviewed Microsoft ODT download is reachable.
+    .DESCRIPTION
+      Sends a HEAD request to Resolve-OfficeDeploymentToolSource's URI. Downloads
+      no executable and does not establish publisher trust or installation state.
+      Install-OfficeDeploymentTool verifies the downloaded and extracted files.
+    .EXAMPLE
+      Test-OfficeDeploymentToolSourceAvailability
+  #>
+  [CmdletBinding()]
+  [OutputType([PSCustomObject])]
+  param ()
+
+  $source = Resolve-OfficeDeploymentToolSource
+  try {
+    $response = Invoke-WebRequest -Uri $source.Uri -Method Head -UseBasicParsing -ErrorAction Stop
+    [PSCustomObject]@{
+      Uri           = $source.Uri
+      Version       = $source.Version
+      Available     = ([int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 300)
+      StatusCode    = [int]$response.StatusCode
+      ContentLength = $response.Headers['Content-Length']
+      CheckedAt     = (Get-Date).ToUniversalTime()
+    }
+  }
+  catch {
+    [PSCustomObject]@{
+      Uri       = $source.Uri
+      Version   = $source.Version
+      Available = $false
+      Error     = $_.Exception.Message
+      CheckedAt = (Get-Date).ToUniversalTime()
+    }
   }
 }
 
@@ -2115,6 +2108,9 @@ function Install-OfficeDeploymentTool {
       Describe acquisition without downloading, creating files, or executing code.
     .EXAMPLE
       Install-OfficeDeploymentTool -Destination C:\Tools\ODT -WhatIf
+    .EXAMPLE
+      $tool = Install-OfficeDeploymentTool -Destination C:\Tools\ODT -Confirm
+      $tool | Format-List Valid, Path, Version
   #>
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
   [OutputType([PSCustomObject])]
@@ -2157,7 +2153,7 @@ function Install-OfficeDeploymentTool {
     $extracted = Join-Path $work 'Extracted'
     New-PSFOfficeProtectedDirectory $extracted
     $native = Invoke-SafeProcess -FilePath $package -ArgumentList @('/quiet', "/extract:$extracted") -AsResult
-    if ($native.ExitCode -ne 0) {
+    if ($native.TimedOut -or $native.Cancelled -or $null -eq $native.ExitCode -or $native.ExitCode -ne 0) {
       Stop-PSFOfficeOperation ToolExtractionFailed "ODT extraction returned $($native.ExitCode)."
     }
     $candidate = Join-Path $extracted 'setup.exe'
@@ -2734,77 +2730,9 @@ function Test-PSFOfficeHost {
   ($os.ProductType -eq 1 -and [int]$os.BuildNumber -ge 19045 -and $processor.Architecture -eq 9)
 }
 
-function Test-PSFOfficePilotHost {
-  [CmdletBinding()]
-  [OutputType([bool])]
-  param ()
-
-  $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-  $processor = Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1
-  ($os.ProductType -eq 1 -and [int]$os.BuildNumber -eq 19045 -and $processor.Architecture -eq 9)
-}
-
-function Get-PSFOfficePilotAssessment {
-  [CmdletBinding()]
-  param (
-    [object]
-    $Configuration,
-
-    [object]
-    $Inventory
-  )
-
-  $blockers = New-Object Collections.ArrayList
-  try {
-    if (-not (Test-PSFOfficePilotHost)) {
-      [void]$blockers.Add('UnsupportedPilotHost')
-    }
-  }
-  catch {
-    [void]$blockers.Add('UnsupportedPilotHost')
-  }
-  if ($Configuration.TargetProductId -ne 'Standard2019Volume' -or $Configuration.Architecture -ne '64' -or
-    $Configuration.Channel -ne 'PerpetualVL2019' -or $Configuration.LocaleSource -ne 'Explicit' -or
-    (@($Configuration.Language) -join ',') -ne 'de-de' -or $Configuration.PrimaryLanguage -ne 'de-de') {
-    [void]$blockers.Add('UnsupportedPilotTarget')
-  }
-
-  # Only the observed Enterprise suite, its resources/shared components, and
-  # File Validation registration are within this pilot's broad MSI consent.
-  $enterprise = @($Inventory.Msi | Where-Object { $_.ProductCode -eq '{91120000-0030-0000-0000-0000000FF1CE}' })
-  $other = @($Inventory.Msi | Where-Object {
-      $_.ProductCode -notmatch '^\{9[01]120000-(0015|0016|0018|0019|001A|001B|001F|002A|002C|0030|0044|006E|00A1|00BA)-(0000|0407|0409|040C|0410)-(0000|1000)-0000000FF1CE\}$' -and
-      $_.ProductCode -ne '{90140000-2005-0000-0000-0000000FF1CE}' -and
-      $_.ProductCode -notin @('ENTERPRISE', 'ENTERPRISER')
-    })
-  if ($Inventory.Products.Count -or $enterprise.Count -ne 1 -or $other.Count) {
-    [void]$blockers.Add('UnsupportedPilotSource')
-  }
-  $ui = @($Inventory.Msi | Where-Object ResourceKind -EQ LanguageResource | Select-Object -ExpandProperty LanguageId -Unique | Sort-Object)
-  $proofing = @($Inventory.Msi | Where-Object ResourceKind -EQ Proofing | Select-Object -ExpandProperty LanguageId -Unique | Sort-Object)
-  $sku = @($Inventory.LanguageEvidence | Where-Object { $_.Path -like '*\Office\12.0\Common\LanguageResources' -and $_.SKULanguage })
-  if (($ui -join ',') -ne 'de-de' -or ($proofing -join ',') -ne 'de-de,en-us,fr-fr,it-it' -or
-    -not $sku.Count -or @($sku | Where-Object { $_.SKULanguage -ne 1031 }).Count) {
-    [void]$blockers.Add('UnsupportedPilotLanguages')
-  }
-  [PSCustomObject]@{
-    Blockers  = @($blockers)
-    Resources = [PSCustomObject][ordered]@{
-      UiLanguages       = @('de-de')
-      PrimaryLanguage   = 'de-de'
-      ProofingLanguages = @('de-de', 'en-us', 'fr-fr', 'it-it')
-      Provisioning      = 'GermanCompanionProofing'
-      Verification      = 'ManualRequired'
-    }
-  }
-}
-
 function Assert-PSFOfficeHost {
   [CmdletBinding()]
-  param (
-    [bool]
-    $PilotMigration = $false
-  )
+  param ()
 
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = New-Object Security.Principal.WindowsPrincipal($identity)
@@ -2815,13 +2743,7 @@ function Assert-PSFOfficeHost {
     Stop-PSFOfficeOperation Unsupported 'Use 64-bit PowerShell on 64-bit Windows.'
   }
   # Ordinary execution accepts x64 Windows 10 22H2 and later desktop hosts.
-  # Existing pilot plans retain their original, narrower host authority.
-  if ($PilotMigration) {
-    if (-not (Test-PSFOfficePilotHost)) {
-      Stop-PSFOfficeOperation UnsupportedPilotHost 'Pilot requires x64 Windows 10 desktop build 19045.'
-    }
-  }
-  elseif (-not (Test-PSFOfficeHost)) {
+  if (-not (Test-PSFOfficeHost)) {
     Stop-PSFOfficeOperation Unsupported 'This backend requires x64 Windows 10 22H2 (build 19045) or later desktop hosts.'
   }
   if ((Test-PendingReboot).PendingReboot) {
@@ -3155,10 +3077,6 @@ function Test-PSFOfficePostcondition {
     }
   }
   $verification = Test-OfficeDeployment -Configuration $Plan.Configuration -Inventory $After
-  if ($Plan.SchemaVersion -eq 2 -and $Plan.PilotMigration) {
-    $verification.Compliant = $false
-    $verification.Unknowns = @($verification.Unknowns) + @('ProofingLanguages')
-  }
   $verification
 }
 
@@ -3188,13 +3106,10 @@ function Invoke-PSFOfficeWorkflow {
     $ForceCloseApps,
 
     [Security.SecureString]
-    $ProductKey,
-
-    [bool]
-    $PilotMigration = $false
+    $ProductKey
   )
 
-  $fresh = Confirm-PSFOfficePlan -Plan $Plan -Action $ExpectedAction -PilotMigration $PilotMigration
+  $fresh = Confirm-PSFOfficePlan -Plan $Plan -Action $ExpectedAction
   $result = New-PSFOfficeResult $fresh
   foreach ($warning in $fresh.Warnings) {
     Write-Warning $warning
@@ -3247,7 +3162,7 @@ function Invoke-PSFOfficeWorkflow {
     return $result
   }
   try {
-    Assert-PSFOfficeHost -PilotMigration $PilotMigration
+    Assert-PSFOfficeHost
     if (-not (Test-OfficeDeploymentTool $OdtPath).Valid) {
       Stop-PSFOfficeOperation UntrustedTool 'ODT verification failed.'
     }
@@ -3283,7 +3198,7 @@ function Invoke-PSFOfficeWorkflow {
   $context = $null
   $work = $null
   try {
-    Assert-PSFOfficeHost -PilotMigration $PilotMigration
+    Assert-PSFOfficeHost
     if (-not (Test-OfficeDeploymentTool $OdtPath).Valid) {
       Stop-PSFOfficeOperation UntrustedTool 'ODT verification failed.'
     }
@@ -3292,7 +3207,7 @@ function Invoke-PSFOfficeWorkflow {
     }
     Assert-PSFOfficePath $LogRoot
     $lock = Enter-PSFOfficeLock
-    $fresh = Confirm-PSFOfficePlan -Plan $fresh -Action $ExpectedAction -PilotMigration $PilotMigration
+    $fresh = Confirm-PSFOfficePlan -Plan $fresh -Action $ExpectedAction
     if (-not $fresh.Eligible) {
       Stop-PSFOfficeOperation StalePlan 'Preconditions changed before lock acquisition.'
     }
@@ -3349,8 +3264,8 @@ function Invoke-PSFOfficeWorkflow {
       }
     }
     Set-PSFOfficeCheckpoint $context StageMedia $true
-    $null = Confirm-PSFOfficePlan -Plan $fresh -Action $ExpectedAction -PilotMigration $PilotMigration
-    Assert-PSFOfficeHost -PilotMigration $PilotMigration
+    $null = Confirm-PSFOfficePlan -Plan $fresh -Action $ExpectedAction
+    Assert-PSFOfficeHost
     $activity = Get-PSFOfficeActivity
     if ($activity.Apps.Count) {
       if (-not $ForceCloseApps) {
@@ -3373,16 +3288,8 @@ function Invoke-PSFOfficeWorkflow {
     Set-PSFOfficeCheckpoint $context Verify
     $result.After = Get-OfficeInventory
     $result.Verification = Test-PSFOfficePostcondition -Plan $fresh -After $result.After
-    if ($PilotMigration) {
-      $result.Activation = Get-OfficeActivationStatus $fresh.Configuration.TargetProductId
-    }
     if (-not $result.Verification.Compliant) {
-      if ($PilotMigration -and -not $result.Verification.Discrepancies.Count -and -not $result.After.Unknowns.Count) {
-        $result.Status = 'AppliedUnverified'
-        $result.ReasonCode = 'PilotVerificationRequired'
-        $result.WrapperExitCode = 1
-      }
-      elseif ($ExpectedAction -in @('SetUpdateConfiguration', 'SetApplicationPreference')) {
+      if ($ExpectedAction -in @('SetUpdateConfiguration', 'SetApplicationPreference')) {
         $result.Status = 'AppliedUnverified'
         $result.ReasonCode = 'EffectiveSettingsUnknown'
         $result.WrapperExitCode = 1

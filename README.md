@@ -198,15 +198,15 @@ conventions. The legacy `-PassThru` status remains `ExitCode:n`, with a separate
 Office commands separate discovery, media preparation, installation, removal, migration, and maintenance authority. A plan is a reviewable
 snapshot; execution rechecks the machine and media. These APIs are intended for thin orchestration wrappers such as winkit's Office scripts.
 
-| Capability             | Commands                                                                                                                                                             |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tool provisioning      | `Resolve-OfficeDeploymentToolSource`, `Install-OfficeDeploymentTool`, `Test-OfficeDeploymentTool`, `Get-OfficeDeploymentToolHelp`                                    |
-| Discovery and intent   | `Get-OfficeInventory`, `New-OfficeDeploymentConfiguration`, `Get-OfficeDeploymentPlan`                                                                               |
-| Independent assessment | `Test-OfficeDeployment`, `Get-OfficeActivationStatus`, `Test-OfficeDeploymentMedia`                                                                                  |
-| Media preparation      | `Save-OfficeDeploymentMedia`                                                                                                                                         |
-| Product lifecycle      | `Install-Office`, `Uninstall-Office`, `Switch-OfficeDeployment`                                                                                                      |
-| Maintenance            | `Update-Office`, `Set-OfficeUpdateConfiguration`, `Add-OfficeLanguage`, `Remove-OfficeLanguage`, `Set-OfficeApplicationSelection`, `Set-OfficeApplicationPreference` |
-| Recovery               | `Get-OfficeDeploymentRecovery`, `Resume-OfficeInstallation`, `Resume-OfficeMigration`                                                                                |
+| Capability             | Commands                                                                                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tool provisioning      | `Resolve-OfficeDeploymentToolSource`, `Test-OfficeDeploymentToolSourceAvailability`, `Install-OfficeDeploymentTool`, `Test-OfficeDeploymentTool`, `Get-OfficeDeploymentToolHelp` |
+| Discovery and intent   | `Get-OfficeInventory`, `New-OfficeDeploymentConfiguration`, `Get-OfficeDeploymentPlan`                                                                                           |
+| Independent assessment | `Test-OfficeDeployment`, `Get-OfficeActivationStatus`, `Test-OfficeDeploymentMedia`                                                                                              |
+| Media preparation      | `Save-OfficeDeploymentMedia`                                                                                                                                                     |
+| Product lifecycle      | `Install-Office`, `Uninstall-Office`, `Switch-OfficeDeployment`                                                                                                                  |
+| Maintenance            | `Update-Office`, `Set-OfficeUpdateConfiguration`, `Add-OfficeLanguage`, `Remove-OfficeLanguage`, `Set-OfficeApplicationSelection`, `Set-OfficeApplicationPreference`             |
+| Recovery               | `Get-OfficeDeploymentRecovery`, `Resume-OfficeInstallation`, `Resume-OfficeMigration`                                                                                            |
 
 ```powershell
 $configuration = New-OfficeDeploymentConfiguration `
@@ -230,6 +230,29 @@ $plan = Get-OfficeDeploymentPlan `
 $plan | Format-List Action, State, Eligible, Blockers, Warnings, LanguageTransition
 $plan | Install-Office -OdtPath 'C:\Tools\ODT\setup.exe' -WhatIf
 ```
+
+ODT acquisition follows the same resolve/check/install separation as LGPO. `Resolve-OfficeDeploymentToolSource` returns a reviewed,
+versioned Microsoft URL without network access; `Test-OfficeDeploymentToolSourceAvailability` probes it with HEAD. A reachable URL is not
+signature validation. `Install-OfficeDeploymentTool` downloads the self-extracting package, checks its Microsoft Authenticode signature
+before running extraction, validates the extracted `setup.exe`, and returns its validation result including `Path`, `Version` and `Valid`.
+It provisions the tool only; it does not install Office. Run from an elevated session with an existing destination parent:
+
+```powershell
+Resolve-OfficeDeploymentToolSource
+Test-OfficeDeploymentToolSourceAvailability
+$tool = Install-OfficeDeploymentTool -Destination 'C:\Tools\ODT' -Confirm
+Test-OfficeDeploymentTool -OdtPath $tool.Path
+```
+
+`-WhatIf` and `-DryRun` acquire nothing. An existing validated tool is reused; an untrusted existing file is rejected without replacement.
+To acquire the reviewed build separately, select a new dedicated directory. Like LGPO source resolution, this is a reviewed source table,
+not a live latest-version lookup. Deployment commands continue to require an explicit `OdtPath` and never silently acquire tools.
+
+Both `Groove` and `OneDrive` remain valid ODT exclusion IDs. `Groove` targets the legacy OneDrive for Business sync client; use `OneDrive`
+for the modern sync client. To exclude both during Office deployment, specify `-ExcludeApp Groove,OneDrive` consistently for configuration,
+preparation and execution. Changing an existing `Groove`-only selection to both is an intentional application-selection change. See
+[Microsoft's modern OneDrive example](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/overview-office-deployment-tool#exclude-onedrive-when-installing-microsoft-365-apps-or-other-applications)
+and [legacy client guidance](https://learn.microsoft.com/en-us/sharepoint/exclude-or-uninstall-previous-sync-client).
 
 Default language is exactly `en-us`, independent of the operating system or account. Explicit lists preserve order; the first language is
 the primary shell language. `-AutoSourceLocales` opts into installed-Office discovery; add `-LocaleSource OperatingSystem` to use the
@@ -304,42 +327,15 @@ preferences.
 These inventory fields are additive within schema 1. Existing plans must be recreated after inventory changes; execution revalidates current
 observations. Existing recovery journals remain subject to their original authority and the current verification gates.
 
-### Office 2007 migration pilot
+### Migration and historical pilot records
 
-`Get-OfficeDeploymentPlan -PilotMigration` and `Switch-OfficeDeployment -PilotMigration` require separate explicit consent for a narrow
-pilot: x64 Windows 10 desktop build 19045, the observed Office Enterprise 2007 MSI suite/resources, and German Standard 2019 volume x64.
-Select `-Language de-de` explicitly and authorize broad removal with `-RemoveMsi`. Automatic installed-language discovery remains strict.
-The plan checks the current host, source registrations, German language evidence, and German/English/French/Italian proofing registrations.
-Other destinations, source products, hosts, unknown inventory, absent consent, and unrelated verification limitations remain blocked.
+Migrations use ordinary schema-1 plans and `Switch-OfficeDeployment`. The former `-PilotMigration` option and scenario-specific
+host/resource assumptions have been removed. Select source Click-to-Run products explicitly with `-RemoveProductId`; use `-RemoveMsi` only
+when authorizing supported legacy MSI removal. Missing observations still prevent verified compliance.
 
-The reviewed resource intent is stored in `Plan.PilotResources`, separately from full UI languages. German media supplies the intended
-German UI and companion proofing; it does not request English/French/Italian UI packs or use runtime `MatchPreviousMSI`. Microsoft's
-[companion-language table](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/overview-deploying-languages-microsoft-365-apps#companion-proofing-languages)
-lists those four proofing languages for German. Applying that companion set to the selected 2019 package is a pilot assumption to verify on
-the target, not proof of installed resources. See also Microsoft's
-[Office 2019 language deployment](https://learn.microsoft.com/en-us/office/2019/deploy#deploy-languages-for-office-2019).
-
-```powershell
-$target = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de
-# Prepare media explicitly with Save-OfficeDeploymentMedia before planning.
-$plan = Get-OfficeDeploymentPlan -Action Migrate -Configuration $target -SourcePath C:\Media\Office2019 -RemoveMsi -PilotMigration
-$plan | ConvertTo-Json -Depth 30
-$plan | Switch-OfficeDeployment -OdtPath C:\ODT\setup.exe -PilotMigration -WhatIf
-# Execute only after reviewing the plan and establishing the VM rollback point.
-$result = $plan | Switch-OfficeDeployment -OdtPath C:\ODT\setup.exe -PilotMigration -Confirm
-```
-
-Normal signature, media identity/build/hash, staging, disk-space, lock, fresh-inventory, application and pending-reboot checks still apply.
-Successful native execution with unresolved observations returns `AppliedUnverified`, `PilotVerificationRequired`, and wrapper exit **1**.
-Proofing verification always remains manual in this pilot. Native 3010 and `RebootRequired` are preserved separately; unverified exit 1
-takes precedence over 3010. Known mismatches, unexpected inventory, and native errors remain failures. Activation is reported separately.
-Never interpret an unverified result as a retry instruction or fleet readiness.
-
-Pilot plans/journals use schema **2**; ordinary plans/journals remain schema 1, and result/configuration schemas are unchanged.
-`Get-OfficeDeploymentRecovery` can inspect pilot evidence, but resume commands reject it with `UnsupportedPilotRecovery`. Old plans cannot
-gain pilot authority by adding fields. Save the result, protected journal/JSONL, collector report, and relevant ODT logs off the VM before
-reverting its snapshot. ODT logs may contain sensitive data. Verify German UI, all four proofing languages, build, x64 apps, activation,
-retained add-ins, representative documents and the user's Outlook profile manually. No actual Office migration is exercised by unit tests.
+Historical schema-2 pilot journals remain inspectable with `Get-OfficeDeploymentRecovery`, but resume commands reject them with
+`UnsupportedPilotRecovery`. They cannot be executed as ordinary plans or converted into new removal authority. A completed installation with
+failed verification must not be replayed to change its reporting status.
 
 An Office Enterprise 2007 x86 to Standard 2019 x64 migration on Windows 10 22H2 x64 completed with native exit 0 and licensed activation.
 The operator verified German UI, the intended proofing resources, applications, add-ins, and Outlook profile/data/settings preservation.

@@ -376,9 +376,8 @@ Describe 'Imported Office sparse registry values' {
     $observed.Products[0].ExcludeApp.Count | Should -Be 0
   }
 
-  It 'plans the MSI-only Office 2007 pilot with empty Click-to-Run collections' {
+  It 'plans ordinary MSI-only Office 2007 migration with empty Click-to-Run collections' {
     $script:sparseRegistry = Get-Content "$PSScriptRoot/fixtures/office/office2007-registry.json" -Raw | ConvertFrom-Json
-    Mock Test-PSFOfficePilotHost { $true } -ModuleName PSFoundation
     Mock Test-OfficeDeploymentMedia {
       [PSCustomObject]@{
         Valid       = $true
@@ -389,11 +388,10 @@ Describe 'Imported Office sparse registry values' {
 
     $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de
     $planArgs = @{
-      Action         = 'Migrate'
-      Configuration  = $target
-      SourcePath     = 'C:\Media\Office2019'
-      RemoveMsi      = $true
-      PilotMigration = $true
+      Action        = 'Migrate'
+      Configuration = $target
+      SourcePath    = 'C:\Media\Office2019'
+      RemoveMsi     = $true
     }
 
     $plan = PSFoundation\Get-OfficeDeploymentPlan @planArgs
@@ -918,6 +916,26 @@ Describe 'Office executor lifecycle' {
     $result.ExitCode | Should -Be 1603
   }
 
+  It 'does not turn an unknown installed build into verified migration success (<Code>)' -ForEach @(
+    @{ Code = 0 }, @{ Code = 3010 }
+  ) {
+    $script:nativeExit = $Code
+    Mock Invoke-PSFOfficeConfiguration {
+      $script:inventory = New-TestOfficeInventory $script:target
+      $script:inventory.Products[0].Version = $null
+      [PSCustomObject]@{ ExitCode = $script:nativeExit }
+    }
+    $migration = Get-OfficeDeploymentPlan -Action Migrate -Configuration $target -SourcePath (Join-Path $TestDrive 'Media')
+    $result = Switch-OfficeDeployment -Plan $migration -OdtPath C:\ODT\setup.exe -LogRoot $logRoot -Confirm:$false
+    $result.Status | Should -Be Failed
+    $result.ReasonCode | Should -Be VerificationFailed
+    $result.WrapperExitCode | Should -Be 1
+    $result.ExitCode | Should -Be $Code
+    $result.RebootRequired | Should -Be ($Code -eq 3010)
+    $result.Verification.Unknowns | Should -Contain Version
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 1
+  }
+
   It 'preserves native reboot success without restarting the host' {
     Mock Invoke-PSFOfficeConfiguration {
       $script:inventory = New-TestOfficeInventory $script:target
@@ -976,190 +994,103 @@ Describe 'Office executor lifecycle' {
   }
 }
 
-Describe 'Office scoped migration pilot' {
+Describe 'Office pilot retirement' {
   BeforeEach {
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' }
     $script:registryFixture = Get-Content "$PSScriptRoot/fixtures/office/office2007-registry.json" -Raw | ConvertFrom-Json
     Mock Get-PSFOfficeRegistrySnapshot { $script:registryFixture }
-    Mock Get-PSFOfficeMachineId { 'synthetic-machine' }
     $script:inventory = Get-OfficeInventory
     Mock Get-OfficeInventory { $script:inventory }
-    Mock Test-PSFOfficePilotHost { $true }
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de
     Mock Test-OfficeDeploymentMedia {
-      [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20208'; Files = @([PSCustomObject]@{ Length = 1 }) } }
+      [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20208' } }
     }
     $script:planArgs = @{
-      Action         = 'Migrate'
-      Configuration  = $script:target
-      SourcePath     = Join-Path $TestDrive 'Media'
-      RemoveMsi      = $true
-      PilotMigration = $true
+      Action        = 'Migrate'
+      Configuration = $target
+      SourcePath    = 'C:\Media\Office2019'
+      RemoveMsi     = $true
     }
+    Mock Invoke-PSFOfficeConfiguration { throw 'Must not execute an installer' }
   }
 
-  It 'no longer needs the pilot opt-in to reach an eligible plan' {
-    # Ordinary migration of this MSI-only source is now eligible on its own.
-    # This is the proof that PilotMigration is redundant for the source it was
-    # created for; the flag itself is retired separately.
-    $strict = Get-OfficeDeploymentPlan -Action Migrate -Configuration $target -SourcePath $planArgs.SourcePath -RemoveMsi
-    $strict.Blockers | Should -Not -Contain UnsupportedNativeVerification
-    $strict.Eligible | Should -BeTrue
-    $strict.SchemaVersion | Should -Be 1
-    $pilot = Get-OfficeDeploymentPlan @planArgs
-    $pilot.Eligible | Should -BeTrue
-    $pilot.SchemaVersion | Should -Be 2
-    $pilot.Before.VerificationLimitations.Count | Should -Be 0
-    $pilot.LanguageTransition.Known | Should -BeFalse
-    $pilot.PilotResources.UiLanguages | Should -Be @('de-de')
-    $pilot.PilotResources.ProofingLanguages | Should -Be @('de-de', 'en-us', 'fr-fr', 'it-it')
-    $pilot.Configuration.Version | Should -Be '16.0.10417.20208'
-    $xml = New-PSFOfficeXml -Action Migrate -Configuration $pilot.Configuration -RemoveMsi $true -MediaPath $planArgs.SourcePath
-    @($xml.Configuration.Add.Product).Count | Should -Be 1
+  It 'uses ordinary migration for the former MSI source without scenario-specific resource claims' {
+    $plan = Get-OfficeDeploymentPlan @planArgs
+    $plan.Eligible | Should -BeTrue
+    $plan.SchemaVersion | Should -Be 1
+    $plan.LanguageTransition.Known | Should -BeFalse
+    $plan.PSObject.Properties.Name | Should -Not -Contain PilotResources
+    $plan.PSObject.Properties.Name | Should -Not -Contain PilotMigration
+    $plan.Configuration.Version | Should -Be '16.0.10417.20208'
+    $xml = New-PSFOfficeXml -Action Migrate -Configuration $plan.Configuration -RemoveMsi $true -MediaPath $planArgs.SourcePath
     $xml.Configuration.Add.Product.Language.ID | Should -Be 'de-de'
     $xml.OuterXml | Should -Not -Match 'MatchPreviousMSI'
   }
 
-  It 'does not authorize a different operation' {
-    $planArgs.Action = 'Install'
-    { Get-OfficeDeploymentPlan @planArgs } | Should -Throw '*only to Migrate*'
-  }
-
-  It 'retains unrelated blocker <Expected>' -ForEach @(
+  It 'retains ordinary blocker <Expected>' -ForEach @(
     @{ Change = 'Consent'; Expected = 'MsiConsentRequired' }
     @{ Change = 'Unknown'; Expected = 'UnknownInventory' }
     @{ Change = 'Backend'; Expected = 'UnsupportedNativeVerification' }
     @{ Change = 'Media'; Expected = 'MissingMedia' }
-    @{ Change = 'Host'; Expected = 'UnsupportedPilotHost' }
-    @{ Change = 'Source'; Expected = 'UnsupportedPilotSource' }
-    @{ Change = 'Language'; Expected = 'UnsupportedPilotLanguages' }
   ) {
     switch ($Change) {
       Consent { $planArgs.RemoveMsi = $false }
       Unknown { $inventory.Unknowns = @('SyntheticUnknown') }
-      Backend { $inventory.VerificationLimitations += 'Architecture' }
+      Backend { $inventory.VerificationLimitations += 'Languages' }
       Media { $planArgs.Remove('SourcePath') }
-      Host { Mock Test-PSFOfficePilotHost { $false } }
-      Source { $inventory.Products = @([PSCustomObject]@{ ProductId = 'O365ProPlusRetail' }) }
-      Language { $inventory.Msi = @($inventory.Msi | Where-Object { $_.LanguageId -ne 'it-it' }) }
     }
-    $pilot = Get-OfficeDeploymentPlan @planArgs
-    $pilot.Eligible | Should -BeFalse
-    $pilot.Blockers | Should -Contain $Expected
+    $plan = Get-OfficeDeploymentPlan @planArgs
+    $plan.Eligible | Should -BeFalse
+    $plan.Blockers | Should -Contain $Expected
   }
 
-  It 'rejects a different target profile <Product> <Architecture> <Language>' -ForEach @(
-    @{ Product = 'Standard2024Volume'; Architecture = '64'; Language = 'de-de' }
-    @{ Product = 'Standard2019Volume'; Architecture = '32'; Language = 'de-de' }
-    @{ Product = 'Standard2019Volume'; Architecture = '64'; Language = 'en-us' }
-  ) {
-    $planArgs.Configuration = New-OfficeDeploymentConfiguration -TargetProductId $Product -Architecture $Architecture -Language $Language
-    (Get-OfficeDeploymentPlan @planArgs).Blockers | Should -Contain UnsupportedPilotTarget
+  It 'rejects the retired parameter and schema-2 execution plans before any installer launch' {
+    { Get-OfficeDeploymentPlan @planArgs -PilotMigration } | Should -Throw '*parameter*PilotMigration*'
+    $plan = Get-OfficeDeploymentPlan @planArgs
+    { Switch-OfficeDeployment -Plan $plan -OdtPath C:\ODT\setup.exe -PilotMigration } | Should -Throw '*parameter*PilotMigration*'
+    $plan.SchemaVersion = 2
+    { Switch-OfficeDeployment -Plan $plan -OdtPath C:\ODT\setup.exe -Confirm:$false } | Should -Throw '*schema*'
+    $plan.SchemaVersion = 1
+    $plan | Add-Member -NotePropertyName PilotMigration -NotePropertyValue $true
+    { Switch-OfficeDeployment -Plan $plan -OdtPath C:\ODT\setup.exe -Confirm:$false } | Should -Throw
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 0
   }
 
-  It 'requires matching execution consent and rejects stale or edited context' {
-    $pilot = Get-OfficeDeploymentPlan @planArgs
-    { Confirm-PSFOfficePlan -Plan $pilot -Action Migrate } | Should -Throw
-    $strict = Get-OfficeDeploymentPlan -Action Migrate -Configuration $target -RemoveMsi
-    { Confirm-PSFOfficePlan -Plan $strict -Action Migrate -PilotMigration $true } | Should -Throw
-    $pilot.PilotResources.ProofingLanguages = @('de-de')
-    { Confirm-PSFOfficePlan -Plan $pilot -Action Migrate -PilotMigration $true } | Should -Throw '*resource intent*'
-    $pilot = Get-OfficeDeploymentPlan @planArgs
-    $inventory.Unknowns = @('ChangedAfterReview')
-    { Confirm-PSFOfficePlan -Plan $pilot -Action Migrate -PilotMigration $true } | Should -Throw '*changed*'
-  }
-
-  Context 'native lifecycle with a matching pilot plan' {
-    BeforeEach {
-      $script:pilot = Get-OfficeDeploymentPlan @planArgs
-      Mock Assert-PSFOfficeHost { }
-      Mock Test-OfficeDeploymentTool { [PSCustomObject]@{ Valid = $true } }
-      Mock Get-PSFOfficeActivity { [PSCustomObject]@{ Busy = $false; Apps = @() } }
-      Mock New-PSFOfficeProtectedDirectory { }
-      Mock Copy-Item { }
-      Mock Write-PSFOfficeJson { $script:journal = $Value }
-      Mock Write-OperationResultLog { 'synthetic-log' }
-      Mock Remove-PSFOfficeWorkDirectory { }
-      Mock Enter-PSFOfficeLock {
-        $lock = [PSCustomObject]@{}
-        $lock | Add-Member ScriptMethod ReleaseMutex { }
-        $lock | Add-Member ScriptMethod Dispose { }
-        $lock
-      }
-      Mock Get-OfficeActivationStatus { [PSCustomObject]@{ Status = 'NotVerified' } }
-      $script:nativeExit = 0
-      $script:wrongArchitecture = $false
-      Mock Invoke-PSFOfficeConfiguration {
-        $related = $script:inventory.RelatedComponents
-        $script:inventory = New-TestOfficeInventory $script:pilot.Configuration
-        $script:inventory | Add-Member -NotePropertyName RelatedComponents -NotePropertyValue $related
-        $script:inventory.Products[0].Languages = $null
-        $script:inventory.Products[0].PrimaryLanguage = $null
-        if ($script:wrongArchitecture) {
-          $script:inventory.Products[0].Architecture = '32'
-        }
-        [PSCustomObject]@{ ExitCode = $script:nativeExit }
-      }
-      $script:executeArgs = @{
-        Plan           = $script:pilot
-        PilotMigration = $true
-        OdtPath        = 'C:\ODT\setup.exe'
-        LogRoot        = Join-Path $TestDrive 'Journal'
-        Confirm        = $false
-      }
+  It 'reads historical schema-2 evidence but refuses recovery before any replay' {
+    $plan = Get-OfficeDeploymentPlan @planArgs
+    $plan.SchemaVersion = 2
+    $plan | Add-Member -NotePropertyName PilotMigration -NotePropertyValue $true
+    $plan | Add-Member -NotePropertyName PilotResources -NotePropertyValue ([PSCustomObject]@{
+        UiLanguages       = @('de-de')
+        PrimaryLanguage   = 'de-de'
+        ProofingLanguages = @('de-de', 'en-us', 'fr-fr', 'it-it')
+        Provisioning      = 'GermanCompanionProofing'
+        Verification      = 'ManualRequired'
+      })
+    $record = [ordered]@{
+      SchemaVersion            = 2
+      RunId                    = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+      MachineId                = 'synthetic-machine'
+      Action                   = 'Migrate'
+      Plan                     = $plan
+      ConfigurationFingerprint = Get-PSFOfficeFingerprint $plan.Configuration
+      MediaFingerprint         = $plan.MediaFingerprint
+      Phase                    = 'Verify'
+      PhaseCompleted           = $false
+      NativeResults            = @([PSCustomObject]@{ ExitCode = 0 })
+      RebootRequired           = $false
+      CreatedAt                = '2026-01-01T00:00:00Z'
+      UpdatedAt                = '2026-01-01T00:00:00Z'
+      Result                   = $null
     }
-
-    It 'keeps previews read-only' {
-      (Switch-OfficeDeployment @executeArgs -WhatIf).Status | Should -Be Preview
-      (Switch-OfficeDeployment @executeArgs -DryRun).Status | Should -Be Preview
-      Should -Invoke Invoke-PSFOfficeConfiguration -Times 0
-      Should -Invoke Copy-Item -Times 0
-      Should -Invoke Write-PSFOfficeJson -Times 0
-      Should -Invoke Enter-PSFOfficeLock -Times 0
-      Should -Invoke Assert-PSFOfficeHost -Times 2 -ParameterFilter { $PilotMigration }
-    }
-
-    It 'keeps native <Code> distinct from unverified exit 1' -ForEach @(
-      @{ Code = 0 }, @{ Code = 3010 }
-    ) {
-      $script:nativeExit = $Code
-      $result = Switch-OfficeDeployment @executeArgs
-      $result.Status | Should -Be AppliedUnverified
-      $result.WrapperExitCode | Should -Be 1
-      $result.ExitCode | Should -Be $Code
-      $result.RebootRequired | Should -Be ($Code -eq 3010)
-      $result.Verification.Unknowns | Should -Contain Languages
-      $result.Verification.Unknowns | Should -Contain ProofingLanguages
-      $result.AlreadyCompliant | Should -BeFalse
-      $result.Activation.Status | Should -Be NotVerified
-      $journal.SchemaVersion | Should -Be 2
-      $journal.Plan.PilotMigration | Should -BeTrue
-      $journal.Result.Before.Msi.Count | Should -BeGreaterThan 0
-      $journal.Result.After.Products[0].Architecture | Should -Be '64'
-      Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -ParameterFilter { $Document.Configuration.RemoveMSI -ne $null }
-    }
-
-    It 'does not soften a native failure or known mismatch' -ForEach @(
-      @{ Code = 1603; Wrong = $false; Reason = 'NativeFailure' }
-      @{ Code = 0; Wrong = $true; Reason = 'VerificationFailed' }
-    ) {
-      $script:nativeExit = $Code
-      $script:wrongArchitecture = $Wrong
-      $result = Switch-OfficeDeployment @executeArgs
-      $result.Status | Should -Be Failed
-      $result.ReasonCode | Should -Be $Reason
-      $result.WrapperExitCode | Should -Be 1
-    }
-
-    It 'reads pilot evidence but refuses recovery before any replay' {
-      $result = Switch-OfficeDeployment @executeArgs
-      $script:journalJson = $journal | ConvertTo-Json -Depth 30
-      Mock Assert-PSFOfficeProtectedPath { }
-      Mock Get-Content { $script:journalJson }
-      $recovery = Get-OfficeDeploymentRecovery -RunId $result.RunId -LogRoot $executeArgs.LogRoot
-      $recovery.Record.SchemaVersion | Should -Be 2
-      { Resume-OfficeMigration -Recovery $recovery -OdtPath C:\ODT\setup.exe } | Should -Throw '*evidence only*'
-      Should -Invoke Invoke-PSFOfficeConfiguration -Times 1
-    }
+    $root = Join-Path $TestDrive 'Historical'
+    $null = New-Item -Path $root -ItemType Directory
+    Mock Assert-PSFOfficeProtectedPath { }
+    Write-PSFOfficeJson -Path (Join-Path $root ($record.RunId + '.json')) -Value $record
+    $recovery = Get-OfficeDeploymentRecovery -RunId $record.RunId -LogRoot $root
+    $recovery.Record.SchemaVersion | Should -Be 2
+    { Resume-OfficeMigration -Recovery $recovery -OdtPath C:\ODT\setup.exe } | Should -Throw '*evidence only*'
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 0
   }
 }
 
@@ -1186,23 +1117,6 @@ Describe 'Office ordinary host assessment' {
   It 'propagates host discovery failure instead of assuming eligibility' {
     Mock Get-CimInstance { throw 'Synthetic host lookup failure' }
     { Test-PSFOfficeHost } | Should -Throw '*Synthetic host lookup failure*'
-  }
-}
-
-Describe 'Office pilot host assessment' {
-  It 'accepts only x64 desktop build 19045 (<Build>/<Type>/<Cpu>)' -ForEach @(
-    @{ Build = '19045'; Type = 1; Cpu = 9; Expected = $true }
-    @{ Build = '19045'; Type = 3; Cpu = 9; Expected = $false }
-    @{ Build = '19045'; Type = 1; Cpu = 12; Expected = $false }
-    @{ Build = '22000'; Type = 1; Cpu = 9; Expected = $false }
-    @{ Build = '19044'; Type = 1; Cpu = 9; Expected = $false }
-  ) {
-    $script:hostBuild = $Build
-    $script:hostType = $Type
-    $script:hostCpu = $Cpu
-    Mock Get-CimInstance { [PSCustomObject]@{ ProductType = $script:hostType; BuildNumber = $script:hostBuild } } -ParameterFilter { $ClassName -eq 'Win32_OperatingSystem' }
-    Mock Get-CimInstance { [PSCustomObject]@{ Architecture = $script:hostCpu } } -ParameterFilter { $ClassName -eq 'Win32_Processor' }
-    Test-PSFOfficePilotHost | Should -Be $Expected
   }
 }
 
@@ -1453,6 +1367,99 @@ Describe 'Office preparation and acquisition boundaries' {
     Should -Invoke Invoke-WebRequest -Times 0
     Should -Invoke Invoke-SafeProcess -Times 0
     Should -Invoke New-PSFOfficeProtectedDirectory -Times 0
+  }
+}
+
+Describe 'Office Deployment Tool acquisition' {
+  BeforeEach {
+    $script:destination = Join-Path $TestDrive ('ODT tools ' + [guid]::NewGuid().ToString('N'))
+    Mock Assert-PSFOfficePath { }
+    Mock Assert-PSFOfficeProtectedPath { }
+    Mock New-PSFOfficeProtectedDirectory { $null = New-Item -Path $Path -ItemType Directory -Force }
+    Mock Invoke-WebRequest { [IO.File]::WriteAllText($OutFile, 'Synthetic extractor') }
+    Mock Get-AuthenticodeSignature {
+      [PSCustomObject]@{ Status = 'Valid'; SignerCertificate = [PSCustomObject]@{ Subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, C=US' } }
+    }
+    Mock Invoke-SafeProcess {
+      $extract = $ArgumentList[1].Substring('/extract:'.Length)
+      [IO.File]::WriteAllText((Join-Path $extract 'setup.exe'), 'Synthetic ODT')
+      [PSCustomObject]@{ ExitCode = 0; TimedOut = $false; Cancelled = $false }
+    }
+    Mock Test-OfficeDeploymentTool {
+      [PSCustomObject]@{ Valid = $true; Path = $OdtPath; Version = '16.0.20326.20112' }
+    }
+  }
+
+  It 'publishes verified setup and reuses it without downloading again' {
+    $first = Install-OfficeDeploymentTool -Destination $destination -Confirm:$false
+    $first.Valid | Should -BeTrue
+    $first.Path | Should -Be (Join-Path $destination 'setup.exe')
+    Test-Path -LiteralPath $first.Path | Should -BeTrue
+    $second = Install-OfficeDeploymentTool -Destination $destination -Confirm:$false
+    $second.Path | Should -Be $first.Path
+    Should -Invoke Invoke-WebRequest -Times 1
+    Should -Invoke Get-AuthenticodeSignature -Times 1
+    Should -Invoke Invoke-SafeProcess -Times 1
+    @(Get-ChildItem -LiteralPath $TestDrive -Directory -Filter 'PSFOfficeTool-*').Count | Should -Be 0
+  }
+
+  It 'rejects failed extraction even when a partial setup exists (<Failure>)' -ForEach @(
+    @{ Failure = 'Exit'; Code = 1603; Timeout = $false; Cancel = $false }
+    @{ Failure = 'Timeout'; Code = 0; Timeout = $true; Cancel = $false }
+    @{ Failure = 'Cancel'; Code = 0; Timeout = $false; Cancel = $true }
+    @{ Failure = 'NoExit'; Code = $null; Timeout = $false; Cancel = $false }
+  ) {
+    $script:extractResult = [PSCustomObject]@{ ExitCode = $Code; TimedOut = $Timeout; Cancelled = $Cancel }
+    Mock Invoke-SafeProcess {
+      $extract = $ArgumentList[1].Substring('/extract:'.Length)
+      [IO.File]::WriteAllText((Join-Path $extract 'setup.exe'), 'Partial output')
+      $script:extractResult
+    }
+    { Install-OfficeDeploymentTool -Destination $destination -Confirm:$false } | Should -Throw '*extraction*'
+    Test-Path -LiteralPath $destination | Should -BeFalse
+    Should -Invoke Test-OfficeDeploymentTool -Times 0
+    @(Get-ChildItem -LiteralPath $TestDrive -Directory -Filter 'PSFOfficeTool-*').Count | Should -Be 0
+  }
+
+  It 'does not publish an untrusted extracted tool' {
+    Mock Test-OfficeDeploymentTool { [PSCustomObject]@{ Valid = $false } }
+    { Install-OfficeDeploymentTool -Destination $destination -Confirm:$false } | Should -Throw '*Extracted ODT*'
+    Test-Path -LiteralPath $destination | Should -BeFalse
+  }
+
+  It 'leaves an untrusted existing tool untouched' {
+    $null = New-Item -Path $destination -ItemType Directory
+    $setup = Join-Path $destination 'setup.exe'
+    [IO.File]::WriteAllText($setup, 'Existing file')
+    Mock Test-OfficeDeploymentTool { [PSCustomObject]@{ Valid = $false } }
+    { Install-OfficeDeploymentTool -Destination $destination -Confirm:$false } | Should -Throw '*Existing ODT*'
+    [IO.File]::ReadAllText($setup) | Should -Be 'Existing file'
+    Should -Invoke Invoke-WebRequest -Times 0
+  }
+
+  It 'keeps DryRun free of downloads and executable launches' {
+    (Install-OfficeDeploymentTool -Destination $destination -DryRun).Status | Should -Be Preview
+    Should -Invoke Invoke-WebRequest -Times 0
+    Should -Invoke Invoke-SafeProcess -Times 0
+    Should -Invoke New-PSFOfficeProtectedDirectory -Times 0
+  }
+
+  It 'probes source availability using HEAD without executing or downloading content' {
+    Mock Invoke-WebRequest { [PSCustomObject]@{ StatusCode = 200; Headers = @{ 'Content-Length' = '1234' } } }
+    $result = Test-OfficeDeploymentToolSourceAvailability
+    $result.Available | Should -BeTrue
+    $result.Uri | Should -Be (Resolve-OfficeDeploymentToolSource).Uri
+    $result.ContentLength | Should -Be '1234'
+    Should -Invoke Invoke-WebRequest -Times 1 -ParameterFilter { $Method -eq 'Head' -and -not $OutFile }
+    Should -Invoke Invoke-SafeProcess -Times 0
+  }
+
+  It 'reports source failure without claiming availability' {
+    Mock Invoke-WebRequest { throw 'Synthetic source unavailable' }
+    $result = Test-OfficeDeploymentToolSourceAvailability
+    $result.Available | Should -BeFalse
+    $result.Error | Should -Match 'Synthetic source unavailable'
+    Should -Invoke Invoke-SafeProcess -Times 0
   }
 }
 
