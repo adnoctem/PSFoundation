@@ -1,3 +1,9 @@
+## [1.8.2](https://github.com/adnoctem/PSFoundation/compare/v1.8.1...v1.8.2) (2026-09-30)
+
+### Bug Fixes
+
+* **src:** write module state under PSFoundation, not winkit ([15d5c66](https://github.com/adnoctem/PSFoundation/commit/15d5c660834a97dd93bd25cb1c8a3ea2085b5d9e))
+
 ## [1.8.1](https://github.com/adnoctem/PSFoundation/compare/v1.8.0...v1.8.1) (2026-09-29)
 
 ### Bug Fixes
