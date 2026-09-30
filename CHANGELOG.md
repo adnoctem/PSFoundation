@@ -1,3 +1,9 @@
+## [1.8.3](https://github.com/adnoctem/PSFoundation/compare/v1.8.2...v1.8.3) (2026-09-30)
+
+### Bug Fixes
+
+* **src:** accept exact-version Office media catalogs ([1aa6f84](https://github.com/adnoctem/PSFoundation/commit/1aa6f84e80a8b949c2828383cd163be6bcddc389))
+
 ## [1.8.2](https://github.com/adnoctem/PSFoundation/compare/v1.8.1...v1.8.2) (2026-09-30)
 
 ### Bug Fixes
