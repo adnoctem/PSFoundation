@@ -117,7 +117,7 @@ function Install-LGPO {
       administrator elevation. A non-elevated session can specify an
       alternate -Destination within the user's writable scope.
     .PARAMETER Destination
-      Directory where LGPO.exe ends up. Defaults to %ProgramData%\winkit\tools.
+      Directory where LGPO.exe ends up. Defaults to %ProgramData%\PSFoundation\tools.
       Non-elevated callers should supply a user-writable path.
     .PARAMETER Source
       Source identifier forwarded to Resolve-LGPOSource.
@@ -128,7 +128,7 @@ function Install-LGPO {
     .EXAMPLE
       PS> Install-LGPO -Force -Verbose
     .EXAMPLE
-      PS> Install-LGPO -Destination "$env:LOCALAPPDATA\winkit\tools"
+      PS> Install-LGPO -Destination "$env:LOCALAPPDATA\PSFoundation\tools"
     .LINK
       https://github.com/adnoctem/winkit/lib/policies.ps1
     .NOTES
@@ -141,7 +141,7 @@ function Install-LGPO {
   param (
     [Parameter(Mandatory = $false)]
     [string]
-    $Destination = (Join-Path -Path $env:ProgramData -ChildPath 'winkit\tools'),
+    $Destination = (Join-Path -Path $env:ProgramData -ChildPath 'PSFoundation\tools'),
 
     [Parameter(Mandatory = $false)]
     [ValidateSet('SCT-LGPO-Standalone')]
@@ -169,7 +169,7 @@ function Install-LGPO {
   }
 
   if (-not (Read-ProcessElevation)) {
-    Write-Error "Writing to '$Destination' requires administrator rights. Run the session elevated or supply a user-writable -Destination such as '$(Join-Path -Path $env:LOCALAPPDATA -ChildPath 'winkit\tools')'."
+    Write-Error "Writing to '$Destination' requires administrator rights. Run the session elevated or supply a user-writable -Destination such as '$(Join-Path -Path $env:LOCALAPPDATA -ChildPath 'PSFoundation\tools')'."
     return
   }
 
@@ -213,7 +213,7 @@ function Test-LGPOInstalled {
     .SYNOPSIS
       Returns $true if LGPO.exe is present at the expected path.
     .PARAMETER Path
-      Full path to LGPO.exe. Defaults to %ProgramData%\winkit\tools\LGPO.exe.
+      Full path to LGPO.exe. Defaults to %ProgramData%\PSFoundation\tools\LGPO.exe.
     .EXAMPLE
       PS> if (Test-LGPOInstalled) { Invoke-LGPO -PolicyPath .\policy.txt }
     .LINK
@@ -228,7 +228,7 @@ function Test-LGPOInstalled {
   param (
     [Parameter(Mandatory = $false)]
     [string]
-    $Path = (Join-Path -Path $env:ProgramData -ChildPath 'winkit\tools\LGPO.exe')
+    $Path = (Join-Path -Path $env:ProgramData -ChildPath 'PSFoundation\tools\LGPO.exe')
   )
 
   return (Test-Path -LiteralPath $Path -PathType Leaf)
@@ -248,7 +248,7 @@ function Invoke-LGPO {
     .PARAMETER PolicyPath
       Path to a policy text file or a directory containing a GPO backup.
     .PARAMETER LgpoExe
-      Path to LGPO.exe. Defaults to %ProgramData%\winkit\tools\LGPO.exe.
+      Path to LGPO.exe. Defaults to %ProgramData%\PSFoundation\tools\LGPO.exe.
     .EXAMPLE
       PS> Invoke-LGPO -PolicyPath .\resources\policies\01-telemetry.txt
     .LINK
@@ -268,7 +268,7 @@ function Invoke-LGPO {
 
     [Parameter(Mandatory = $false)]
     [string]
-    $LgpoExe = (Join-Path -Path $env:ProgramData -ChildPath 'winkit\tools\LGPO.exe')
+    $LgpoExe = (Join-Path -Path $env:ProgramData -ChildPath 'PSFoundation\tools\LGPO.exe')
   )
 
   if (-not (Test-Path -LiteralPath $LgpoExe -PathType Leaf)) {

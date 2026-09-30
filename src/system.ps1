@@ -514,17 +514,19 @@ function Get-SystemInfo {
 function Get-SystemPaths {
   <#
     .SYNOPSIS
-      Returns standard winkit directory paths for tools, config, cache, data, and logs.
+      Returns standard product directory paths for tools, config, cache, data, and logs.
     .DESCRIPTION
-      Provides a single structured lookup for the five canonical winkit folders.
-      The -Name parameter controls the subdirectory name used under each root.
-      Defaults to 'winkit' so callers can omit it for standard usage.
+      Provides a single structured lookup for the five canonical per-product
+      folders. The -Name parameter controls the subdirectory name used under
+      each root and defaults to this module's own name, so a consuming product
+      supplies its own rather than inheriting another one's directories.
     .PARAMETER Name
-      Subdirectory name under each root. Defaults to 'winkit'.
+      Subdirectory name under each root. Defaults to 'PSFoundation'. A single
+      path segment; separators are rejected.
     .EXAMPLE
       PS> $paths = Get-SystemPaths
       PS> $paths.Data
-      C:\ProgramData\winkit
+      C:\ProgramData\PSFoundation
     .EXAMPLE
       PS> Get-SystemPaths -Name 'myapp' | Format-List
     .LINK
@@ -538,8 +540,11 @@ function Get-SystemPaths {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory = $false)]
+    # A path segment, not a path: separators and traversal are rejected so a
+    # caller-supplied name cannot escape the standard roots.
+    [ValidatePattern('^[A-Za-z0-9._-]+$')]
     [string]
-    $Name = 'winkit'
+    $Name = 'PSFoundation'
   )
 
   return [PSCustomObject]@{

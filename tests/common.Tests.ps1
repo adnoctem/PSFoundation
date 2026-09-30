@@ -228,6 +228,61 @@ Describe 'ConvertTo-RegistrySettingResult' {
 }
 
 
+Describe 'Write-OperationResultLog default log directory' {
+  BeforeEach {
+    $script:originalTemp = $env:TEMP
+    $script:fakeTemp = Join-Path $TestDrive "temp-$([guid]::NewGuid().ToString('N'))"
+    $null = [IO.Directory]::CreateDirectory($script:fakeTemp)
+    $env:TEMP = $script:fakeTemp
+  }
+
+  AfterEach {
+    $env:TEMP = $script:originalTemp
+  }
+
+  It 'writes under this module''s own directory, never another product''s' {
+    $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+    $path = Write-OperationResultLog -Results @($result) -ScriptName 'Synthetic-Script'
+
+    # A library must not log into a consuming product's directory by default.
+    $path | Should -BeLike (Join-Path $fakeTemp 'PSFoundation\logs\*')
+    $path | Should -Not -BeLike '*\winkit\*'
+    Test-Path -LiteralPath $path | Should -BeTrue
+  }
+
+  It 'lets a consuming product choose its own directory with <Name>' -ForEach @(
+    @{ Name = 'winkit' }
+    @{ Name = 'some.other-product' }
+  ) {
+    $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+    $path = Write-OperationResultLog -Results @($result) -ScriptName 'Synthetic-Script' -Name $Name
+
+    $path | Should -BeLike (Join-Path $fakeTemp "$Name\logs\*")
+    Test-Path -LiteralPath $path | Should -BeTrue
+  }
+
+  It 'still uses its own directory when ScriptName is omitted' {
+    # The ScriptName fallback derives from Name too, but a caller with a script
+    # of its own supplies that name, so only the directory is asserted here.
+    $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+    $path = Write-OperationResultLog -Results @($result)
+
+    $path | Should -BeLike (Join-Path $fakeTemp 'PSFoundation\logs\*')
+    $path | Should -BeLike '*.jsonl'
+  }
+
+  It 'rejects <Description> in Name so it cannot escape the log root' -ForEach @(
+    @{ Value = '..\..\Windows'; Description = 'traversal' }
+    @{ Value = 'winkit\logs'; Description = 'a separator' }
+    @{ Value = 'C:\Temp'; Description = 'a qualified path' }
+    @{ Value = '*'; Description = 'a wildcard' }
+  ) {
+    $result = [PSCustomObject]@{ Target = 'Synthetic'; Status = 'Completed' }
+    { Write-OperationResultLog -Results @($result) -Name $Value } |
+      Should -Throw -ExpectedMessage '*does not match*'
+  }
+}
+
 Describe 'Write-OperationResultLog path handling' {
   It 'resolves relative destinations against the PowerShell location' {
     $nativeRoot = Join-Path $TestDrive 'native'

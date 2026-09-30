@@ -329,18 +329,25 @@ function Write-OperationResultLog {
       console output concise but still need an auditable record of every
       action, skipped action, and failure.
 
-      Logs are written to %TEMP%\winkit\logs by default. Each line includes a
-      timestamp, script name, and the properties already present on the result
-      object, such as Target, Source, Scope, Action, Status, Detail,
+      Logs are written to %TEMP%\PSFoundation\logs by default. Each line
+      includes a timestamp, script name, and the properties already present on
+      the result object, such as Target, Source, Scope, Action, Status, Detail,
       SkippedReason, or Error.
+
+      Consumers that want their own log directory pass -Name. This module never
+      writes under another product's directory by default.
     .PARAMETER Results
       Operation result objects to serialize.
     .PARAMETER ScriptName
       Name used in the log entries and default file name. Defaults to the
       calling script name when available.
+    .PARAMETER Name
+      Directory name used under %TEMP% when Path is omitted. Defaults to
+      PSFoundation. Consuming products supply their own name, for example
+      -Name 'winkit'. A single path segment; separators are rejected.
     .PARAMETER Path
       Optional explicit output file path. When omitted, a timestamped .jsonl
-      file is created under %TEMP%\winkit\logs.
+      file is created under %TEMP%\<Name>\logs.
     .PARAMETER RunId
       Identifier assigned to log entries that do not already carry a RunId.
     .EXAMPLE
@@ -363,6 +370,12 @@ function Write-OperationResultLog {
     [System.Collections.IEnumerable]$Results,
 
     [string]$ScriptName,
+
+    # A path segment, not a path: reject separators, traversal and wildcards so
+    # a caller-supplied name cannot escape the temp log root.
+    [ValidatePattern('^[A-Za-z0-9._-]+$')]
+    [string]$Name = 'PSFoundation',
+
     [string]$Path,
     [string]$RunId
   )
@@ -377,14 +390,14 @@ function Write-OperationResultLog {
       $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($MyInvocation.ScriptName)
     }
     else {
-      $ScriptName = 'winkit-operation'
+      $ScriptName = "$Name-operation"
     }
   }
 
   $_safeScriptName = $ScriptName -replace '[^A-Za-z0-9._-]', '-'
   if ([string]::IsNullOrWhiteSpace($Path)) {
     $_tempRoot = if ([string]::IsNullOrWhiteSpace($env:TEMP)) { [System.IO.Path]::GetTempPath() } else { $env:TEMP }
-    $_logRoot = Join-Path -Path $_tempRoot -ChildPath 'winkit\logs'
+    $_logRoot = Join-Path -Path (Join-Path -Path $_tempRoot -ChildPath $Name) -ChildPath 'logs'
     $_timestamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $Path = Join-Path -Path $_logRoot -ChildPath "$_safeScriptName-$_timestamp.jsonl"
   }

@@ -463,3 +463,32 @@ Describe 'Set-ScheduledTaskState' {
     $result[0].Detail | Should -Be 'WhatIf'
   }
 }
+
+Describe 'Get-SystemPaths' {
+  It 'defaults every root to this module''s own directory' {
+    $paths = Get-SystemPaths
+
+    # A library must not hand out a consuming product's directories by default.
+    foreach ($property in @('Home', 'Config', 'Cache', 'Data')) {
+      $paths.$property | Should -BeLike '*\PSFoundation'
+      $paths.$property | Should -Not -BeLike '*\winkit*'
+    }
+    $paths.Logs | Should -BeLike '*\PSFoundation\logs'
+    $paths.Data | Should -Be (Join-Path $env:ProgramData 'PSFoundation')
+  }
+
+  It 'lets a consuming product supply its own name' {
+    $paths = Get-SystemPaths -Name 'winkit'
+
+    $paths.Data | Should -Be (Join-Path $env:ProgramData 'winkit')
+    $paths.Logs | Should -Be (Join-Path $env:LOCALAPPDATA 'winkit\logs')
+  }
+
+  It 'rejects <Description> in Name so it cannot escape the standard roots' -ForEach @(
+    @{ Value = '..\..\Windows'; Description = 'traversal' }
+    @{ Value = 'winkit\tools'; Description = 'a separator' }
+    @{ Value = 'C:\Temp'; Description = 'a qualified path' }
+  ) {
+    { Get-SystemPaths -Name $Value } | Should -Throw -ExpectedMessage '*does not match*'
+  }
+}

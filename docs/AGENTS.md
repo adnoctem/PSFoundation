@@ -38,7 +38,7 @@ modifies files so the final check passes on the proposed changes.
 
 - Formatting is PSScriptAnalyzer-driven: 2-space indent, UTF-8 **with BOM**, CRLF; `format` normalizes encoding/line endings on write. UTF-8
   BOM is required for Windows PowerShell 5.1 parsing.
-- `format`/`lint` exclude `.git`, `.idea`, `dist`, `build`, `secrets`. `secrets/` is gitignored — never commit its contents.
+- `format`/`lint` exclude `.git`, `.idea`, `dist` and `build`.
 - Target PowerShell 5.1+; avoid PS7-only syntax. New `src/` scripts start with `#Requires -Version 5.0`; tests use `#Requires -Version 5.1`
   plus the Pester 5 module requirement.
 - Commits: conventional commits `type(scope): summary`; types `feat|fix|docs|refactor|test|chore|build|ci`, scopes
