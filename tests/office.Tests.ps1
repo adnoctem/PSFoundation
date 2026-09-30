@@ -976,9 +976,170 @@ Describe 'Office media package integrity' {
   }
 
   It 'allows a bilingual package to serve a single-language request' {
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language de-de
     $result = Test-OfficeDeploymentMedia -SourcePath $mediaRoot -Configuration $target
     $result.Valid | Should -BeTrue
-    $target.Language | Should -Be @('en-us')
+    $target.Language | Should -Be @('de-de')
+  }
+
+  It 'accepts <Layout> metadata for architecture <Architecture>' -ForEach @(
+    foreach ($architecture in @('32', '64')) {
+      foreach ($layout in @('generic', 'versioned', 'both')) {
+        @{ Architecture = $architecture; Layout = $layout }
+      }
+    }
+  ) {
+    $manifest.Architecture = $Architecture
+    if ($Architecture -eq '32') {
+      foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $mediaRoot 'Office\Data\16.0.17932.20162') -File)) {
+        Rename-Item -LiteralPath $file.FullName -NewName $file.Name.Replace('x64', 'x86')
+      }
+      Rename-Item -LiteralPath (Join-Path $mediaRoot 'Office\Data\v64.cab') -NewName 'v32.cab'
+    }
+    if ($Layout -ne 'generic') {
+      [IO.File]::WriteAllText((Join-Path $mediaRoot "Office\Data\v${Architecture}_16.0.17932.20162.cab"), 'Synthetic pinned catalog')
+    }
+    if ($Layout -eq 'versioned') {
+      Remove-Item -LiteralPath (Join-Path $mediaRoot "Office\Data\v$Architecture.cab")
+    }
+    $manifest.Files = @(Get-PSFOfficeMediaFile $mediaRoot | Sort-Object Path)
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Architecture $Architecture -Language de-de -Version $manifest.Version
+
+    $result = Test-OfficeDeploymentMedia -SourcePath $mediaRoot -Configuration $target
+    $result.Valid | Should -BeTrue
+    $result.Fingerprint | Should -Not -BeNullOrEmpty
+    $result.ReasonCode | Should -BeNullOrEmpty
+    $result.Error | Should -BeNullOrEmpty
+    $xml = New-PSFOfficeXml -Action Install -Configuration $target -MediaPath $result.Path
+    $xml.Configuration.Add.Version | Should -Be $manifest.Version
+    $xml.Configuration.Add.SourcePath | Should -Be $mediaRoot
+    $xml.Configuration.Add.AllowCdnFallback | Should -Be 'FALSE'
+  }
+
+  It 'rejects <Catalog> as a substitute for exact metadata on architecture <Architecture>' -ForEach @(
+    foreach ($architecture in @('32', '64')) {
+      foreach ($catalog in @('absent', 'wrong-version', 'wrong-architecture', 'arbitrary')) {
+        @{ Architecture = $architecture; Catalog = $catalog }
+      }
+    }
+  ) {
+    $manifest.Architecture = $Architecture
+    Remove-Item -LiteralPath (Join-Path $mediaRoot 'Office\Data\v64.cab')
+    if ($Architecture -eq '32') {
+      foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $mediaRoot 'Office\Data\16.0.17932.20162') -File)) {
+        Rename-Item -LiteralPath $file.FullName -NewName $file.Name.Replace('x64', 'x86')
+      }
+    }
+    $otherArchitecture = '32'
+    if ($Architecture -eq '32') { $otherArchitecture = '64' }
+    $wrongCab = switch ($Catalog) {
+      'wrong-version' { "v${Architecture}_16.0.17932.20161.cab" }
+      'wrong-architecture' { "v${otherArchitecture}_16.0.17932.20162.cab" }
+      'arbitrary' { 'unrelated.cab' }
+    }
+    if ($wrongCab) {
+      [IO.File]::WriteAllText((Join-Path $mediaRoot "Office\Data\$wrongCab"), 'Synthetic unrelated metadata')
+    }
+    $manifest.Files = @(Get-PSFOfficeMediaFile $mediaRoot | Sort-Object Path)
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    $result = Test-OfficeDeploymentMedia $mediaRoot
+    $result.Valid | Should -BeFalse
+    $result.ReasonCode | Should -Be MissingMedia
+    $result.Error | Should -BeLike "*Office/Data/v$Architecture.cab*"
+    $result.Error | Should -BeLike "*Office/Data/v${Architecture}_16.0.17932.20162.cab*"
+  }
+
+  It 'reports every missing payload and both CAB alternatives together' {
+    foreach ($relative in @('Office/Data/v64.cab', 'Office/Data/16.0.17932.20162/stream.x64.x-none.dat', 'Office/Data/16.0.17932.20162/stream.x64.de-de.dat')) {
+      Remove-Item -LiteralPath (Join-Path $mediaRoot $relative)
+    }
+    $manifest.Files = @(Get-PSFOfficeMediaFile $mediaRoot | Sort-Object Path)
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    $result = Test-OfficeDeploymentMedia $mediaRoot
+    $result.ReasonCode | Should -Be MissingMedia
+    foreach ($relative in @('Office/Data/v64.cab', 'Office/Data/v64_16.0.17932.20162.cab', 'Office/Data/16.0.17932.20162/stream.x64.x-none.dat', 'Office/Data/16.0.17932.20162/stream.x64.de-de.dat')) {
+      $result.Error | Should -BeLike "*$relative*"
+    }
+  }
+
+  It 'distinguishes missing <Locale> streams on architecture <Architecture>' -ForEach @(
+    foreach ($architecture in @('32', '64')) {
+      @{ Architecture = $architecture; Locale = 'x-none'; Reason = 'MissingMedia' }
+      @{ Architecture = $architecture; Locale = 'de-de'; Reason = 'MissingLanguageMedia' }
+    }
+  ) {
+    $manifest.Architecture = $Architecture
+    $platform = 'x64'
+    if ($Architecture -eq '32') { $platform = 'x86' }
+    foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $mediaRoot 'Office\Data\16.0.17932.20162') -File)) {
+      if ($Architecture -eq '32') { Rename-Item -LiteralPath $file.FullName -NewName $file.Name.Replace('x64', 'x86') }
+    }
+    Rename-Item -LiteralPath (Join-Path $mediaRoot 'Office\Data\v64.cab') -NewName "v${Architecture}_16.0.17932.20162.cab"
+    $missing = "Office/Data/16.0.17932.20162/stream.$platform.$Locale.dat"
+    Remove-Item -LiteralPath (Join-Path $mediaRoot $missing)
+    $manifest.Files = @(Get-PSFOfficeMediaFile $mediaRoot | Sort-Object Path)
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    $result = Test-OfficeDeploymentMedia $mediaRoot
+    $result.ReasonCode | Should -Be $Reason
+    $result.Error | Should -BeLike "*$missing*"
+  }
+
+  It 'reports undeclared requested languages even if their streams exist' {
+    $manifest.AvailableLanguages = @('en-us')
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language de-de
+    $result = Test-OfficeDeploymentMedia $mediaRoot -Configuration $target
+    $result.ReasonCode | Should -Be MissingLanguageMedia
+    $result.Error | Should -BeLike '*not declared in AvailableLanguages: de-de*'
+  }
+
+  It 'identifies unavailable requested languages and their missing paths' {
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language fr-fr, it-it
+    $result = Test-OfficeDeploymentMedia $mediaRoot -Configuration $target
+    $result.ReasonCode | Should -Be MissingLanguageMedia
+    $result.Error | Should -BeLike '*not declared in AvailableLanguages: fr-fr, it-it*'
+    foreach ($locale in @('fr-fr', 'it-it')) {
+      $result.Error | Should -BeLike "*Office/Data/16.0.17932.20162/stream.x64.$locale.dat*"
+    }
+  }
+
+  It 'retains integrity checks for versioned metadata with <Change>' -ForEach @(
+    @{ Change = 'hash'; Reason = 'MediaIntegrityFailed' }
+    @{ Change = 'length'; Reason = 'MediaIntegrityFailed' }
+    @{ Change = 'extra'; Reason = 'MediaIntegrityFailed' }
+    @{ Change = 'empty'; Reason = 'InvalidMedia' }
+    @{ Change = 'collision'; Reason = 'UnsafeManifest' }
+  ) {
+    $cab = Join-Path $mediaRoot 'Office\Data\v64_16.0.17932.20162.cab'
+    Rename-Item -LiteralPath (Join-Path $mediaRoot 'Office\Data\v64.cab') -NewName 'v64_16.0.17932.20162.cab'
+    $manifest.Files = @(Get-PSFOfficeMediaFile $mediaRoot | Sort-Object Path)
+    switch ($Change) {
+      'hash' { $manifest.Files[0].Hash = 'a' * 64 }
+      'length' { $manifest.Files[0].Length++ }
+      'extra' { [IO.File]::WriteAllText((Join-Path $mediaRoot 'Office\Data\extra.cab'), 'unexpected') }
+      'empty' { [IO.File]::WriteAllText($cab, '') }
+      'collision' {
+        $manifest.Files += [PSCustomObject]@{ Path = $manifest.Files[0].Path.ToUpperInvariant(); Length = 1; Hash = 'a' * 64 }
+      }
+    }
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    (Test-OfficeDeploymentMedia $mediaRoot).ReasonCode | Should -Be $Reason
+  }
+
+  It 'retains target matching for <Dimension>' -ForEach @(
+    @{ Dimension = 'Product'; Arguments = @{ TargetProductId = 'ProPlus2024Volume' } }
+    @{ Dimension = 'Architecture'; Arguments = @{ TargetProductId = 'Standard2024Volume'; Architecture = '32' } }
+    @{ Dimension = 'Channel'; Arguments = @{ TargetProductId = 'O365ProPlusRetail'; Channel = 'MonthlyEnterprise' } }
+    @{ Dimension = 'Version'; Arguments = @{ TargetProductId = 'Standard2024Volume'; Version = '16.0.17932.20161' } }
+  ) {
+    if ($Dimension -eq 'Channel') {
+      $manifest.Product = 'O365ProPlusRetail'
+      $manifest.Channel = 'Current'
+      $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    }
+    $different = New-OfficeDeploymentConfiguration @Arguments
+    (Test-OfficeDeploymentMedia $mediaRoot -Configuration $different).ReasonCode | Should -Be MediaMismatch
   }
 
   It 'detects altered or extra source payloads' {
@@ -1005,6 +1166,27 @@ Describe 'Office media package integrity' {
     (Test-OfficeDeploymentMedia $mediaRoot).ReasonCode | Should -Be ReprepareMedia
     @{ Schema = 1 } | ConvertTo-Json | Set-Content -LiteralPath $manifestPath
     (Test-OfficeDeploymentMedia $mediaRoot).Valid | Should -BeFalse
+  }
+}
+
+Describe 'Office media path protection' {
+  It 'rejects <Case> before reading a manifest' -ForEach @(
+    @{ Case = 'untrusted owner'; Sddl = 'O:S-1-1-0G:S-1-5-32-544D:P(A;;FA;;;S-1-5-32-544)'; Reason = 'UntrustedMedia' }
+    @{ Case = 'untrusted write permission'; Sddl = 'O:S-1-5-32-544G:S-1-5-32-544D:P(A;;FA;;;S-1-1-0)'; Reason = 'UntrustedMedia' }
+    @{ Case = 'reparse traversal'; Sddl = ''; Reason = 'UnsafePath' }
+  ) {
+    $root = Join-Path $TestDrive 'protected-media'
+    $null = New-Item -ItemType Directory -Path $root -Force
+    $script:mediaAcl = New-Object Security.AccessControl.DirectorySecurity
+    if ($Sddl) { $script:mediaAcl.SetSecurityDescriptorSddlForm($Sddl) }
+    Mock Get-Acl { $script:mediaAcl }
+    Mock Get-Content { throw 'Must reject before reading a manifest' }
+    if ($Case -eq 'reparse traversal') {
+      Mock Get-Item { [PSCustomObject]@{ Attributes = [IO.FileAttributes]::ReparsePoint } } -ParameterFilter { $LiteralPath -eq $root }
+    }
+    $result = Test-OfficeDeploymentMedia -SourcePath $root
+    $result.ReasonCode | Should -Be $Reason
+    Should -Invoke Get-Content -Times 0
   }
 }
 
@@ -1470,12 +1652,20 @@ Describe 'Office preparation and acquisition boundaries' {
     [IO.File]::WriteAllText($setupPath, 'Synthetic executable fixture; never executed.')
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language en-us, de-de
     $script:destination = Join-Path $TestDrive ('Prepared media ' + [guid]::NewGuid().ToString('N'))
+    $script:prepareCatalog = 'v64.cab'
+    $script:omitPrepare = @()
     Mock Invoke-PSFOfficeConfiguration {
       $data = Join-Path $Directory 'Office\Data\16.0.17932.20162'
       $null = [IO.Directory]::CreateDirectory($data)
-      [IO.File]::WriteAllText((Join-Path (Split-Path $data -Parent) 'v64.cab'), 'Synthetic base catalog')
+      if ($script:prepareCatalog) {
+        [IO.File]::WriteAllText((Join-Path (Split-Path $data -Parent) $script:prepareCatalog), 'Synthetic base catalog')
+      }
+      $platform = 'x64'
+      if ($Document.Configuration.Add.OfficeClientEdition -eq '32') { $platform = 'x86' }
       foreach ($language in @('x-none', 'en-us', 'de-de')) {
-        [IO.File]::WriteAllText((Join-Path $data "stream.x64.$language.dat"), "Synthetic $language payload")
+        if ($language -notin $script:omitPrepare) {
+          [IO.File]::WriteAllText((Join-Path $data "stream.$platform.$language.dat"), "Synthetic $language payload")
+        }
       }
       [PSCustomObject]@{ ExitCode = 0 }
     }
@@ -1498,6 +1688,56 @@ Describe 'Office preparation and acquisition boundaries' {
     { Save-OfficeDeploymentMedia -Configuration $target -SourcePath $destination -OdtPath $setupPath -Confirm:$false } | Should -Throw '*1603*'
     Test-Path -LiteralPath $destination | Should -BeFalse
     @(Get-ChildItem -LiteralPath $TestDrive -Directory -Filter 'PSFOfficePrepare-*').Count | Should -Be 0
+  }
+
+  It 'publishes and reuses exact-version-only metadata for architecture <Architecture>' -ForEach @(
+    @{ Architecture = '32' }
+    @{ Architecture = '64' }
+  ) {
+    $script:prepareCatalog = "v${Architecture}_16.0.17932.20162.cab"
+    $target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Architecture $Architecture -Language en-us, de-de -Version 16.0.17932.20162
+    $media = Save-OfficeDeploymentMedia -Configuration $target -SourcePath $destination -OdtPath $setupPath -Confirm:$false
+    $media.Valid | Should -BeTrue
+    $media.Manifest.Version | Should -Be $target.Version
+    $media.Manifest.Files.Path | Should -Contain "Office/Data/$script:prepareCatalog"
+    Test-Path -LiteralPath (Join-Path $destination "Office\Data\v$Architecture.cab") | Should -BeFalse
+    Test-Path -LiteralPath (Join-Path $destination 'psfoundation-office-media.json') | Should -BeTrue
+    Test-Path -LiteralPath (Join-Path $destination 'setup.exe') | Should -BeFalse
+    $german = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Architecture $Architecture -Language de-de -Version $target.Version
+    $reuse = Save-OfficeDeploymentMedia -Configuration $german -SourcePath $destination -OdtPath $setupPath -Confirm:$false
+    $reuse.Valid | Should -BeTrue
+    $reuse.Fingerprint | Should -Be $media.Fingerprint
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -Exactly
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -Exactly -ParameterFilter {
+      $Mode -eq '/download' -and $Document.Configuration.Add.Version -eq '16.0.17932.20162' -and
+      $Document.Configuration.Add.AllowCdnFallback -eq 'FALSE' -and $Document.Configuration.Add.SourcePath -eq $Directory
+    }
+    @(Get-ChildItem -LiteralPath $TestDrive -Directory -Filter 'PSFOfficePrepare-*').Count | Should -Be 0
+  }
+
+  It 'keeps complete <Case> diagnostics after failed preparation cleanup' -ForEach @(
+    @{ Case = 'base and language'; Catalog = ''; Omit = @('x-none', 'de-de'); Reason = 'MissingMedia' }
+    @{ Case = 'language only'; Catalog = 'v64_16.0.17932.20162.cab'; Omit = @('de-de'); Reason = 'MissingLanguageMedia' }
+  ) {
+    $script:prepareCatalog = $Catalog
+    $script:omitPrepare = $Omit
+    $failure = $null
+    try {
+      $null = Save-OfficeDeploymentMedia -Configuration $target -SourcePath $destination -OdtPath $setupPath -Confirm:$false
+    }
+    catch { $failure = $_ }
+    $failure | Should -Not -BeNullOrEmpty
+    $failure.Exception.Data['OfficeReason'] | Should -Be $Reason
+    foreach ($locale in $Omit) {
+      $failure.Exception.Message | Should -BeLike "*Office/Data/16.0.17932.20162/stream.x64.$locale.dat*"
+    }
+    if (-not $Catalog) {
+      $failure.Exception.Message | Should -BeLike '*Office/Data/v64.cab*'
+      $failure.Exception.Message | Should -BeLike '*Office/Data/v64_16.0.17932.20162.cab*'
+    }
+    Test-Path -LiteralPath $destination | Should -BeFalse
+    @(Get-ChildItem -LiteralPath $TestDrive -Directory -Filter 'PSFOfficePrepare-*').Count | Should -Be 0
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -Exactly
   }
 
   It 'never downloads or creates staging during preparation preview' {

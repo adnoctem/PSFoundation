@@ -277,6 +277,15 @@ Deployment language selection can be a subset of the available languages. Old `w
 preparation into a new directory. Files and manifests require Administrators/SYSTEM ownership and write access; hashes do not authenticate
 an attacker-replaced manifest. Local/UNC media must be accessible to the actual execution identity. Recovery records must remain local.
 
+Media metadata can be `Office/Data/v<architecture>.cab` or `Office/Data/v<architecture>_<pinned-version>.cab`, with the exact architecture
+and manifest build. Neutral and every declared language stream remain required. Missing metadata or neutral content reports `MissingMedia`;
+missing language content reports `MissingLanguageMedia`. The readable `Error` lists missing paths and, when metadata is absent, both CAB
+alternatives. Failed preparation preserves that diagnostic while removing temporary downloads and leaving the destination unpublished. This
+validates package structure and integrity; native local-source behavior still needs validation with the selected ODT and build. Execution
+keeps an exact version and `AllowCdnFallback=FALSE`. Microsoft notes that absent generic CAB metadata can lead to CDN downloads in some
+deployment flows; see
+[package anatomy and installation options](https://learn.microsoft.com/en-us/microsoft-365-apps/best-practices/install-options).
+
 Operation results have `SchemaVersion = 1` and include `RunId`, `Action`, `Phase`, `Status`, `ReasonCode`, `Before`, `After`,
 `Verification`, `Configuration`, `LanguageTransition`, `Activation`, `NativeResults`, `RebootRequired`, `RecoveryRequired`, `RecoveryPath`,
 `LogPaths`, and cleanup details. `Changed = $null` with `ChangeKnown = $false` means the outcome is uncertain, including after an invoked

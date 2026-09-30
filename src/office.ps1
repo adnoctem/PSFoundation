@@ -2327,6 +2327,9 @@ function Test-OfficeDeploymentMedia {
       Schema 2 separates available languages from ordered deployment languages.
       Schema 1 packages require preparation again because their language semantics
       cannot establish this contract. Validation performs no writes or downloads.
+      Metadata may use the architecture's generic CAB or its exact pinned-version
+      CAB. Neutral and declared language streams remain mandatory. Missing payload
+      diagnostics include relative paths; validation does not prove native offline use.
     .PARAMETER SourcePath
       Absolute package directory containing psfoundation-office-media.json.
     .PARAMETER Configuration
@@ -2365,15 +2368,14 @@ function Test-OfficeDeploymentMedia {
       Stop-PSFOfficeOperation InvalidMedia 'Media languages are empty or duplicated.'
     }
     $manifestTarget = New-OfficeDeploymentConfiguration -TargetProductId $manifest.Product -Architecture $manifest.Architecture -Channel $manifest.Channel -Language $available -Version $manifest.Version
+    $missingRequested = @()
     if ($Configuration) {
       $target = ConvertTo-PSFOfficeConfiguration $Configuration
       if ($target.TargetProductId -ne $manifest.Product -or $target.Architecture -ne $manifest.Architecture -or
         $target.Channel -ne $manifest.Channel -or ($target.Version -and $target.Version -ne $manifest.Version)) {
         Stop-PSFOfficeOperation MediaMismatch 'Package product, architecture, channel, or build differs from target.'
       }
-      if (@($target.Language | Where-Object { $_ -notin $available }).Count) {
-        Stop-PSFOfficeOperation MissingLanguageMedia 'The package does not contain every requested language.'
-      }
+      $missingRequested = @($target.Language | Where-Object { $_ -notin $available })
     }
     $seen = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($file in $manifest.Files) {
@@ -2398,10 +2400,31 @@ function Test-OfficeDeploymentMedia {
     if ($manifestTarget.Architecture -eq '32') {
       $platform = 'x86'
     }
-    $required = @("Office/Data/v$($manifest.Architecture).cab", "Office/Data/$($manifest.Version)/stream.$platform.x-none.dat")
-    $required += @($available | ForEach-Object { "Office/Data/$($manifest.Version)/stream.$platform.$_.dat" })
-    if (@($required | Where-Object { $_ -notin $files.Path }).Count) {
-      Stop-PSFOfficeOperation MissingLanguageMedia 'Required base or language payload is missing.'
+    $catalogs = @("Office/Data/v$($manifest.Architecture).cab", "Office/Data/v$($manifest.Architecture)_$($manifest.Version).cab")
+    $missingCatalog = -not @($catalogs | Where-Object { $_ -in $files.Path }).Count
+    $neutral = "Office/Data/$($manifest.Version)/stream.$platform.x-none.dat"
+    $missingBase = @($neutral | Where-Object { $_ -notin $files.Path })
+    $requiredLanguages = @($available) + @($missingRequested)
+    $missingLanguages = @($requiredLanguages | ForEach-Object { "Office/Data/$($manifest.Version)/stream.$platform.$_.dat" } | Where-Object { $_ -notin $files.Path })
+    if ($missingCatalog -or $missingBase.Count -or $missingLanguages.Count -or $missingRequested.Count) {
+      $diagnostics = @()
+      if ($missingCatalog) {
+        $diagnostics += "Missing metadata CAB; require one of: $($catalogs -join ', ')."
+      }
+      if ($missingBase.Count) {
+        $diagnostics += "Missing neutral payload: $($missingBase -join ', ')."
+      }
+      if ($missingLanguages.Count) {
+        $diagnostics += "Missing language payloads: $($missingLanguages -join ', ')."
+      }
+      if ($missingRequested.Count) {
+        $diagnostics += "Requested languages not declared in AvailableLanguages: $($missingRequested -join ', ')."
+      }
+      $reason = 'MissingLanguageMedia'
+      if ($missingCatalog -or $missingBase.Count) {
+        $reason = 'MissingMedia'
+      }
+      Stop-PSFOfficeOperation $reason ($diagnostics -join ' ')
     }
     [PSCustomObject]@{
       Valid       = $true
