@@ -1,3 +1,9 @@
+## [1.8.5](https://github.com/adnoctem/PSFoundation/compare/v1.8.4...v1.8.5) (2026-10-02)
+
+### Bug Fixes
+
+* **src:** accept empty Office recovery settings under strict mode ([d79da28](https://github.com/adnoctem/PSFoundation/commit/d79da28369c8719288fd7a97b2ea2704849e2bd3))
+
 ## [1.8.4](https://github.com/adnoctem/PSFoundation/compare/v1.8.3...v1.8.4) (2026-10-02)
 
 ### Bug Fixes
