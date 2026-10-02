@@ -64,6 +64,89 @@ Describe 'Imported Office nullable collections' {
   }
 }
 
+Describe 'Imported Office strict-mode settings' {
+  BeforeAll {
+    Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+  }
+
+  It 'inherits production strict mode from the module import' {
+    InModuleScope PSFoundation {
+      $ErrorActionPreference = 'Stop'
+      { ([PSCustomObject]@{}).Missing } | Should -Throw
+    }
+  }
+
+  It 'accepts empty JSON settings for <Action>' -ForEach @(
+    @{ Action = 'Install' }, @{ Action = 'Migrate' }
+  ) {
+    InModuleScope PSFoundation -Parameters @{ Action = $Action } {
+      param ($Action)
+      $ErrorActionPreference = 'Stop'
+      $settings = '{}' | ConvertFrom-Json
+      Assert-PSFOfficeSetting -Action $Action -Settings $settings | Should -BeNullOrEmpty
+    }
+  }
+
+  It 'validates zero, one and multiple fields on <Kind> contracts' -ForEach @(
+    @{ Kind = 'dictionary' }, @{ Kind = 'object' }
+  ) {
+    InModuleScope PSFoundation -Parameters @{ Kind = $Kind } {
+      param ($Kind)
+      $ErrorActionPreference = 'Stop'
+      foreach ($fields in @(@{}, @{ Enabled = $true }, @{ Enabled = $true; Channel = 'Current' })) {
+        $contract = $fields
+        if ($Kind -eq 'object') { $contract = [PSCustomObject]$fields }
+        { Assert-PSFOfficeField $contract @('Enabled', 'Channel') @($fields.Keys) } | Should -Not -Throw
+        { Assert-PSFOfficeField $contract @('Enabled', 'Channel', 'Missing') @('Missing') } |
+          Should -Throw '*Missing Office contract field: Missing*'
+      }
+      $contract = @{ Unexpected = $true }
+      if ($Kind -eq 'object') { $contract = [PSCustomObject]$contract }
+      { Assert-PSFOfficeField $contract @('Enabled') } | Should -Throw '*Unexpected Office contract field*'
+      { Assert-PSFOfficeSetting Migrate $contract } | Should -Throw '*Unexpected Office contract field*'
+    }
+  }
+
+  It 'retains domain errors for empty <Kind> settings on <Action>' -ForEach @(
+    @{ Kind = 'dictionary'; Action = 'SetUpdateConfiguration'; Message = '*at least one update setting*' }
+    @{ Kind = 'object'; Action = 'SetUpdateConfiguration'; Message = '*at least one update setting*' }
+    @{ Kind = 'dictionary'; Action = 'SetApplicationPreference'; Message = '*At least one application preference*' }
+    @{ Kind = 'object'; Action = 'SetApplicationPreference'; Message = '*At least one application preference*' }
+  ) {
+    InModuleScope PSFoundation -Parameters @{ Kind = $Kind; Action = $Action; Message = $Message } {
+      param ($Kind, $Action, $Message)
+      $ErrorActionPreference = 'Stop'
+      $settings = @{}
+      if ($Kind -eq 'object') { $settings = '{}' | ConvertFrom-Json }
+      $failure = $null
+      try { Assert-PSFOfficeSetting -Action $Action -Settings $settings }
+      catch { $failure = $_ }
+      $failure | Should -Not -BeNullOrEmpty
+      $failure.Exception.Message | Should -BeLike $Message
+      $failure.Exception.Data['OfficeReason'] | Should -Be InvalidConfiguration
+    }
+  }
+
+  It 'renders one and multiple update settings from <Kind> inputs' -ForEach @(
+    @{ Kind = 'dictionary' }, @{ Kind = 'object' }
+  ) {
+    InModuleScope PSFoundation -Parameters @{ Kind = $Kind } {
+      param ($Kind)
+      $ErrorActionPreference = 'Stop'
+      foreach ($fields in @(@{ Enabled = $true }, @{ Enabled = $false; Channel = 'Current' })) {
+        $settings = $fields
+        if ($Kind -eq 'object') { $settings = [PSCustomObject]$fields }
+        $xml = New-PSFOfficeXml -Action SetUpdateConfiguration -Settings $settings
+        $xml.Configuration.Updates.Attributes.Count | Should -Be $fields.Count
+        foreach ($name in $fields.Keys) {
+          $xml.Configuration.Updates.GetAttribute($name) | Should -Be ([string]$fields[$name])
+        }
+      }
+    }
+  }
+}
+
 Describe 'Imported Office sparse registry values' {
   BeforeAll {
     Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
@@ -1841,6 +1924,39 @@ Describe 'Office pre-fix migration journal continuation' {
     $preview.Configuration.Version | Should -Be $recoveryTarget.Version
     Should -Invoke Invoke-PSFOfficeConfiguration -Times 0
     Should -Invoke New-PSFOfficeProtectedDirectory -Times 0
+    (Get-FileHash -LiteralPath $originalPath).Hash | Should -Be $originalHash
+  }
+
+  It 'reads empty historical settings and previews through the imported strict-mode module' {
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' } -ModuleName PSFoundation
+    Mock Assert-PSFOfficeProtectedPath { } -ModuleName PSFoundation
+    Mock Assert-PSFOfficeHost { } -ModuleName PSFoundation
+    Mock Get-PSFOfficeRegistrySnapshot { $script:staleRecords } -ModuleName PSFoundation
+    Mock Get-PSFOfficePathAttribute {
+      if ($LiteralPath -like '*.exe') { throw [IO.FileNotFoundException]::new('Synthetic removed executable') }
+      [IO.FileAttributes]::Directory
+    } -ModuleName PSFoundation
+    Mock Get-PSFOfficeActivity { [PSCustomObject]@{ Busy = $false; Apps = @() } } -ModuleName PSFoundation
+    Mock Test-PendingReboot { [PSCustomObject]@{ PendingReboot = $false } } -ModuleName PSFoundation
+    Mock Test-OfficeDeploymentTool { [PSCustomObject]@{ Valid = $true } } -ModuleName PSFoundation
+    Mock Test-OfficeDeploymentMedia {
+      [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20211' } }
+    } -ModuleName PSFoundation
+    Mock Invoke-PSFOfficeConfiguration { throw 'Preview must not launch ODT' } -ModuleName PSFoundation
+    Mock Write-PSFOfficeJson { throw 'Preview must not write journals' } -ModuleName PSFoundation
+
+    $ErrorActionPreference = 'Stop'
+    $loaded = PSFoundation\Get-OfficeDeploymentRecovery -RunId $originalRecord.RunId -LogRoot $recoveryRoot
+    @($loaded.Record.Plan.Settings.PSObject.Properties | ForEach-Object { $_.Name }).Count | Should -Be 0
+    $loaded.Record.Plan.InventoryFingerprint | Should -Be $originalRecord.Plan.InventoryFingerprint
+    $preview = PSFoundation\Resume-OfficeMigration -Recovery $loaded -OdtPath C:\ODT\setup.exe -DryRun
+    $preview.Status | Should -Be Preview
+    $preview.Configuration.Version | Should -Be $recoveryTarget.Version
+    $preview.Plan.RemoveProductId.Count | Should -Be 0
+    $preview.Plan.RemoveMsi | Should -BeFalse
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
+    Should -Invoke Write-PSFOfficeJson -ModuleName PSFoundation -Times 0
     (Get-FileHash -LiteralPath $originalPath).Hash | Should -Be $originalHash
   }
 

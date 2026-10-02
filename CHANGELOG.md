@@ -2,7 +2,8 @@
 
 ### Bug Fixes
 
-* **src:** distinguish stale Office App Paths from active residue ([3b801e0](https://github.com/adnoctem/PSFoundation/commit/3b801e0620cafe3f7d5a6d4076a9fa53b60079c4))
+- **src:** distinguish stale Office App Paths from active residue
+  ([3b801e0](https://github.com/adnoctem/PSFoundation/commit/3b801e0620cafe3f7d5a6d4076a9fa53b60079c4))
 
 ## [1.8.3](https://github.com/adnoctem/PSFoundation/compare/v1.8.2...v1.8.3) (2026-09-30)
 

@@ -564,9 +564,11 @@ function Assert-PSFOfficeField {
   if ($null -eq $InputObject -or $InputObject -is [string]) {
     Stop-PSFOfficeOperation InvalidContract 'An Office contract must be a data object.'
   }
-  $names = @($InputObject.PSObject.Properties.Name | Where-Object { $_ })
   if ($InputObject -is [Collections.IDictionary]) {
     $names = @($InputObject.Keys)
+  }
+  else {
+    $names = @($InputObject.PSObject.Properties | ForEach-Object { $_.Name })
   }
   foreach ($name in $names) {
     if ($name -notin $Allowed) {
@@ -1665,9 +1667,11 @@ function Assert-PSFOfficeSetting {
     'SetApplicationPreference' { $allowed = @('Preferences') }
   }
   Assert-PSFOfficeField $Settings $allowed
-  $names = @($Settings.PSObject.Properties.Name | Where-Object { $_ })
   if ($Settings -is [Collections.IDictionary]) {
     $names = @($Settings.Keys)
+  }
+  else {
+    $names = @($Settings.PSObject.Properties | ForEach-Object { $_.Name })
   }
   if ($Action -eq 'SetUpdateConfiguration') {
     if (-not $names.Count) {
@@ -1694,7 +1698,7 @@ function Assert-PSFOfficeSetting {
     }
   }
   elseif ($Action -eq 'SetApplicationPreference') {
-    if (-not @($Settings.Preferences).Count) {
+    if ('Preferences' -notin $names -or -not @($Settings.Preferences).Count) {
       Stop-PSFOfficeOperation InvalidConfiguration 'At least one application preference is required.'
     }
     foreach ($preference in $Settings.Preferences) {
@@ -2684,9 +2688,11 @@ function New-PSFOfficeXml {
   }
   elseif ($Action -eq 'SetUpdateConfiguration') {
     $node = $document.CreateElement('Updates')
-    $names = @($Settings.PSObject.Properties.Name | Where-Object { $_ })
     if ($Settings -is [Collections.IDictionary]) {
       $names = @($Settings.Keys)
+    }
+    else {
+      $names = @($Settings.PSObject.Properties | ForEach-Object { $_.Name })
     }
     foreach ($name in $names) {
       $node.SetAttribute($name, [string]$Settings.$name)
