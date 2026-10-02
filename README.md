@@ -259,6 +259,20 @@ the primary shell language. `-AutoSourceLocales` opts into installed-Office disc
 machine installation UI language from `HKLM\SYSTEM\CurrentControlSet\Control\Nls\Language:InstallLanguage`. This is not the user's display
 language, keyboard layout, or regional format. Ambiguous installed-Office language evidence is a blocker rather than an implicit fallback.
 
+`Get-OfficeInventory` retains App Paths observations in `AppPathEvidence`: registry view/key, raw and resolved target, `State` and `Reason`.
+Confirmed missing executable references do not by themselves count as Click-to-Run residue. Present or uncertain Click-to-Run references
+still block when configuration is absent, as do genuine remaining Click-to-Run registry artifacts. Discovery never removes registry entries.
+Path probing uses literal local fixed-drive paths, bounded environment expansion by registry view and ancestor checks; network paths,
+reparse points, access failures and ambiguous targets cannot establish absence. Windows system paths and short-name aliases in 32-bit
+PowerShell on x64 Windows remain uncertain to avoid redirection errors. Absolute Office installation paths are not remapped according to the
+invoking process's bitness.
+
+An ordinary migration journal at completed `Remove` can continue with `Resume-OfficeMigration` after fresh inventory establishes removal.
+Recovery hashes its historical `Before` snapshot unchanged, revalidates current state and media, and intersects original removal IDs with
+current products. When none remain, continuation installs without repeating removal and writes a new run/journal, preserving the original.
+Use a fresh recovery descriptor after reloading an updated module; preview first and supply a fresh `SecureString` key for execution when
+needed. This does not enable replay of uncertain partial installations or historical pilot journals.
+
 Executors accept only their matching plan action. `Uninstall-Office` requires exact `RemoveProductId` selections. `Switch-OfficeDeployment`
 alone combines selected removal and installation, including explicitly authorized broad MSI removal. Updates preserve other deployment
 dimensions; language operations preserve the primary language. An intentional primary-language replacement belongs to migration.

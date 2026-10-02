@@ -313,6 +313,10 @@ Describe 'Imported Office sparse registry values' {
   }
 
   It 'still reports Click-to-Run App Paths without a configuration as residue' {
+    Mock Get-PSFOfficePathAttribute {
+      if ($LiteralPath -like '*.exe') { [IO.FileAttributes]::Normal }
+      else { [IO.FileAttributes]::Directory }
+    } -ModuleName PSFoundation
     $script:sparseRegistry = @([PSCustomObject]@{
         View   = 'Registry64'
         Path   = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'
@@ -952,6 +956,212 @@ Describe 'Office plans and narrow XML generation' {
   }
 }
 
+Describe 'Office App Paths target evidence' {
+  BeforeEach {
+    $script:appKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'
+    Mock Get-PSFOfficePathEnvironment { @{ ProgramFiles = 'C:\NativeApps'; 'ProgramFiles(x86)' = 'C:\Apps32' } }
+    Mock Get-PSFOfficePathAttribute {
+      if ($LiteralPath -like '*.exe') { [IO.FileAttributes]::Normal }
+      else { [IO.FileAttributes]::Directory }
+    }
+  }
+
+  It 'resolves quoted and expanded paths literally for <View>' -ForEach @(
+    @{ View = 'Registry32'; Expected = 'C:\Apps32\Office16\WINWORD.EXE' }
+    @{ View = 'Registry64'; Expected = 'C:\NativeApps\Office16\WINWORD.EXE' }
+  ) {
+    Mock Get-PSFOfficePathEnvironment {
+      if ($View -eq 'Registry32') { @{ ProgramFiles = 'C:\Apps32' } }
+      else { @{ ProgramFiles = 'C:\NativeApps' } }
+    }
+    $raw = '"%ProgramFiles%\Office16\WINWORD.EXE"'
+    $result = Get-PSFOfficeAppPathEvidence -RawTarget $raw -View $View -RegistryPath $appKey
+    $result.State | Should -Be Present
+    $result.RawTarget | Should -Be $raw
+    $result.ResolvedTarget | Should -Be $Expected
+    $result.RegistryView | Should -Be $View
+    Should -Invoke Get-PSFOfficePathAttribute -Times 1 -ParameterFilter { $LiteralPath -eq $Expected }
+  }
+
+  It 'reports <Failure> as <State> rather than silently treating every failure as absence' -ForEach @(
+    @{ Failure = 'FileNotFound'; State = 'Missing'; Reason = 'TargetNotFound' }
+    @{ Failure = 'DirectoryNotFound'; State = 'Missing'; Reason = 'TargetNotFound' }
+    @{ Failure = 'Denied'; State = 'Uncertain'; Reason = 'AccessDenied' }
+    @{ Failure = 'IO'; State = 'Uncertain'; Reason = 'ProbeFailed' }
+    @{ Failure = 'Directory'; State = 'Uncertain'; Reason = 'UnexpectedPathType' }
+  ) {
+    $script:probeFailure = $Failure
+    Mock Get-PSFOfficePathAttribute {
+      switch ($script:probeFailure) {
+        FileNotFound { throw [IO.FileNotFoundException]::new('Synthetic missing file') }
+        DirectoryNotFound { throw [IO.DirectoryNotFoundException]::new('Synthetic missing directory') }
+        Denied { throw [UnauthorizedAccessException]::new('Synthetic access failure') }
+        IO { throw [IO.IOException]::new('Synthetic I/O failure') }
+        Directory { [IO.FileAttributes]::Directory }
+      }
+    } -ParameterFilter { $LiteralPath -like '*.exe' }
+    $result = Get-PSFOfficeAppPathEvidence -RawTarget 'C:\Apps\Office16\WINWORD.EXE' -View Registry64 -RegistryPath $appKey
+    $result.State | Should -Be $State
+    $result.Reason | Should -Be $Reason
+  }
+
+  It 'does not traverse a reparse ancestor or mistake an intermediate file for absence' -ForEach @(
+    @{ Attributes = [IO.FileAttributes]::ReparsePoint; Reason = 'ReparsePoint' }
+    @{ Attributes = [IO.FileAttributes]::Normal; Reason = 'UnexpectedPathType' }
+  ) {
+    $script:ancestorAttributes = $Attributes
+    Mock Get-PSFOfficePathAttribute { $script:ancestorAttributes } -ParameterFilter { $LiteralPath -eq 'C:\Apps' }
+    $result = Get-PSFOfficeAppPathEvidence -RawTarget 'C:\Apps\Office16\WINWORD.EXE' -View Registry64 -RegistryPath $appKey
+    $result.State | Should -Be Uncertain
+    $result.Reason | Should -Be $Reason
+    Should -Invoke Get-PSFOfficePathAttribute -Times 0 -ParameterFilter { $LiteralPath -like 'C:\Apps\*' }
+  }
+
+  It 'rejects unsupported or ambiguous target <Raw> without filesystem access' -ForEach @(
+    @{ Raw = '\\server\share\Office16\WINWORD.EXE' }
+    @{ Raw = '\\?\C:\Office16\WINWORD.EXE' }
+    @{ Raw = 'Office16\WINWORD.EXE' }
+    @{ Raw = 'C:\Office16\..\WINWORD.EXE' }
+    @{ Raw = 'C:\Office16\WINWORD.EXE:stream' }
+    @{ Raw = 'C:\Office16\WINWORD.EXE /argument' }
+    @{ Raw = 'C:\Office*\WINWORD.EXE' }
+    @{ Raw = 'C:\Office16\WINWORD.EXE.' }
+    @{ Raw = 'C:\Office16\EXCEL.EXE' }
+    @{ Raw = 'C:\missing\CON\Office16\WINWORD.EXE' }
+    @{ Raw = ('C:\' + ('x' * 256) + '\Office16\WINWORD.EXE') }
+    @{ Raw = '%UNKNOWN_OFFICE_ROOT%\Office16\WINWORD.EXE' }
+    @{ Raw = '' }
+    @{ Raw = @('C:\Office16\WINWORD.EXE', 'other') }
+  ) {
+    (Get-PSFOfficeAppPathEvidence -RawTarget $Raw -View Registry64 -RegistryPath $appKey).State | Should -Be Uncertain
+    Should -Invoke Get-PSFOfficePathAttribute -Times 0
+  }
+
+  It 'does not expand unapproved nested environment tokens' {
+    Mock Get-PSFOfficePathEnvironment { @{ ProgramFiles = '%UNRESOLVED%' } }
+    (Get-PSFOfficeAppPathEvidence -RawTarget '%ProgramFiles%\Office16\WINWORD.EXE' -View Registry32 -RegistryPath $appKey).State | Should -Be Uncertain
+    Should -Invoke Get-PSFOfficePathAttribute -Times 0
+  }
+
+  It 'does not classify an inaccessible root as a missing executable' {
+    Mock Get-PSFOfficePathAttribute { throw [IO.DirectoryNotFoundException]::new('Synthetic unavailable root') } -ParameterFilter { $LiteralPath -eq 'C:\' }
+    $result = Get-PSFOfficeAppPathEvidence -RawTarget 'C:\Office16\WINWORD.EXE' -View Registry64 -RegistryPath $appKey
+    $result.State | Should -Be Uncertain
+    $result.Reason | Should -Be ProbeFailed
+  }
+
+  It 'does not infer absence from WOW64 system-path redirection or short aliases' -ForEach @(
+    @{ Target = 'system' }, @{ Target = 'alias' }
+  ) {
+    $path = Join-Path $env:SystemRoot 'System32\Office16\WINWORD.EXE'
+    if ($Target -eq 'alias') { $path = 'C:\WINDOW~1\System32\Office16\WINWORD.EXE' }
+    $result = Get-PSFOfficeAppPathEvidence -RawTarget $path -View Registry64 -RegistryPath $appKey
+    if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+      $result.State | Should -Be Uncertain
+      $result.Reason | Should -Be FilesystemRedirection
+      Should -Invoke Get-PSFOfficePathAttribute -Times 0
+    }
+    else { $result.State | Should -Be Present }
+  }
+
+  It 'selects Program Files consistently from the registry view' {
+    # Exercise the real environment mapping in its own module scope.
+    $native = & (Get-Module PSFoundation) { Get-PSFOfficePathEnvironment Registry64 }
+    $x86 = & (Get-Module PSFoundation) { Get-PSFOfficePathEnvironment Registry32 }
+    if ([Environment]::Is64BitOperatingSystem) {
+      $native.ProgramFiles | Should -Be $env:ProgramW6432
+      $x86.ProgramFiles | Should -Be ${env:ProgramFiles(x86)}
+    }
+    else {
+      $native.ProgramFiles | Should -Be $env:ProgramFiles
+      $x86.ProgramFiles | Should -Be $env:ProgramFiles
+    }
+  }
+
+  It 'distinguishes an existing and deleted synthetic executable using native attributes' {
+    $file = Join-Path $TestDrive 'WINWORD.EXE'
+    [IO.File]::WriteAllText($file, 'Synthetic data; never executed.')
+    $present = & (Get-Module PSFoundation) {
+      param ($TargetPath)
+      Get-PSFOfficeAppPathEvidence -RawTarget $TargetPath -View Registry64 -RegistryPath 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'
+    } $file
+    $present.State | Should -Be Present
+    Remove-Item -LiteralPath $file
+    $missing = & (Get-Module PSFoundation) {
+      param ($TargetPath)
+      Get-PSFOfficeAppPathEvidence -RawTarget $TargetPath -View Registry32 -RegistryPath 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'
+    } $file
+    $missing.State | Should -Be Missing
+    $missing.Reason | Should -Be TargetNotFound
+  }
+}
+
+Describe 'Office stale App Paths inventory' {
+  BeforeEach {
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' }
+    $script:appRecords = @()
+    Mock Get-PSFOfficeRegistrySnapshot { $script:appRecords }
+    Mock Get-PSFOfficePathAttribute {
+      if ($LiteralPath -like '*.exe') { throw [IO.FileNotFoundException]::new('Synthetic missing file') }
+      [IO.FileAttributes]::Directory
+    }
+  }
+
+  It 'retains <Count> missing references without inventing installed products under strict mode' -ForEach @(
+    @{ Count = 0 }, @{ Count = 1 }, @{ Count = 6 }
+  ) {
+    $script:appRecords = @(foreach ($view in @('Registry32', 'Registry64')) {
+        foreach ($name in @('WINWORD.EXE', 'EXCEL.EXE', 'OUTLOOK.EXE')) {
+          [PSCustomObject]@{ View = $view; Path = "SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$name"; Values = [PSCustomObject]@{ '(default)' = "C:\Program Files (x86)\Microsoft Office\Root\Office16\$name" }; SubKeys = @() }
+        }
+      })
+    $script:appRecords = @($script:appRecords | Select-Object -First $Count)
+    Set-StrictMode -Version Latest
+    $observed = Get-OfficeInventory
+    $observed.Unknowns.Count | Should -Be 0
+    $observed.Products.Count | Should -Be 0
+    $observed.AppPathEvidence.Count | Should -Be $Count
+    @($observed.AppPathEvidence | Where-Object State -NE Missing).Count | Should -Be 0
+    if ($Count) {
+      $observed.AppPathEvidence[0].RegistryPath | Should -Be $appRecords[0].Path
+      $observed.AppPathEvidence[0].RawTarget | Should -Be $appRecords[0].Values.'(default)'
+    }
+  }
+
+  It 'keeps mixed missing and <Case> references blocking' -ForEach @(
+    @{ Case = 'present' }, @{ Case = 'denied' }, @{ Case = 'invalid' }
+  ) {
+    $script:appRecords = @(foreach ($view in @('Registry32', 'Registry64')) {
+        [PSCustomObject]@{ View = $view; Path = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'; Values = [PSCustomObject]@{ '(default)' = "C:\Apps\Office16\$view\WINWORD.EXE" } }
+      })
+    $script:appCase = $Case
+    if ($Case -eq 'invalid') { $script:appRecords[1].Values.'(default)' = 'invalid Office16 target' }
+    Mock Get-PSFOfficePathAttribute {
+      if ($script:appCase -eq 'denied') { throw [UnauthorizedAccessException]::new('Synthetic denial') }
+      [IO.FileAttributes]::Normal
+    } -ParameterFilter { $LiteralPath -eq 'C:\Apps\Office16\Registry64\WINWORD.EXE' }
+    $observed = Get-OfficeInventory
+    $observed.Unknowns | Should -Contain OfficeResidueWithoutConfiguration
+    $observed.AppPathEvidence[0].State | Should -Be Missing
+  }
+
+  It 'keeps genuine <Key> registry residue blocking' -ForEach @(
+    @{ Key = 'ProductReleaseIDs' }, @{ Key = 'Inventory\Office\16.0' }, @{ Key = 'Configuration' }
+  ) {
+    $script:appRecords = @([PSCustomObject]@{ View = 'Registry64'; Path = "SOFTWARE\Microsoft\Office\ClickToRun\$Key"; Values = [PSCustomObject]@{}; SubKeys = @() })
+    (Get-OfficeInventory).Unknowns.Count | Should -BeGreaterThan 0
+  }
+
+  It 'distinguishes uncertain custom paths from known legacy MSI paths (<Folder>)' -ForEach @(
+    @{ Folder = 'Custom'; Blocking = $true }, @{ Folder = 'Office12'; Blocking = $false }
+  ) {
+    $script:appRecords = @([PSCustomObject]@{ View = 'Registry64'; Path = 'SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE'; Values = [PSCustomObject]@{ '(default)' = "C:\$Folder\WINWORD.EXE" } })
+    Mock Get-PSFOfficePathAttribute { throw [UnauthorizedAccessException]::new('Synthetic denial') }
+    $observed = Get-OfficeInventory
+    ($observed.Unknowns -contains 'OfficeResidueWithoutConfiguration') | Should -Be $Blocking
+  }
+}
+
 Describe 'Office media package integrity' {
   BeforeEach {
     Mock Assert-PSFOfficeProtectedPath { }
@@ -1543,6 +1753,168 @@ Describe 'Office recovery boundaries' {
     $script:inventory = New-TestOfficeInventory $target
     $script:inventory.Products[0].ProductId = 'VisioProRetail'
     (Resume-OfficeInstallation -Recovery $recovery -OdtPath C:\ODT\setup.exe).ReasonCode | Should -Be Conflict
+  }
+}
+
+Describe 'Office pre-fix migration journal continuation' {
+  BeforeEach {
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' }
+    Mock Assert-PSFOfficeProtectedPath { }
+    Mock Assert-PSFOfficeHost { }
+    Mock Get-PSFOfficeActivity { [PSCustomObject]@{ Busy = $false; Apps = @() } }
+    Mock Test-PendingReboot { [PSCustomObject]@{ PendingReboot = $false } }
+    Mock Test-OfficeDeploymentTool { [PSCustomObject]@{ Valid = $true; Version = '16.0.20326.20112' } }
+    Mock Test-OfficeDeploymentMedia {
+      [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20211'; Files = @([PSCustomObject]@{ Length = 1 }) } }
+    }
+    Mock Get-OfficeActivationStatus { [PSCustomObject]@{ Status = 'Licensed' } }
+    Mock Get-PSFOfficePathAttribute {
+      if ($LiteralPath -like '*.exe') { throw [IO.FileNotFoundException]::new('Synthetic removed executable') }
+      [IO.FileAttributes]::Directory
+    }
+    $script:staleRecords = @(foreach ($view in @('Registry32', 'Registry64')) {
+        foreach ($name in @('WINWORD.EXE', 'EXCEL.EXE', 'OUTLOOK.EXE')) {
+          [PSCustomObject]@{ View = $view; Path = "SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$name"; Values = [PSCustomObject]@{ '(default)' = "C:\Program Files (x86)\Microsoft Office\Root\Office16\$name" }; SubKeys = @() }
+        }
+      })
+    $script:recoveryRecords = $script:staleRecords
+    Mock Get-PSFOfficeRegistrySnapshot { $script:recoveryRecords }
+    $script:installedRecords = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    foreach ($record in $script:installedRecords) {
+      if ($record.Path -like '*ClickToRun\Configuration') {
+        $record.Values.Platform = 'x64'
+        $record.Values.'Standard2019Volume.ExcludedApps' = 'Groove,OneDrive,OneNote,Publisher'
+      }
+      if ($record.Values.PSObject.Properties['Version']) { $record.Values.Version = '16.0.10417.20211' }
+    }
+    $script:recoveryTarget = New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de -Version 16.0.10417.20211 -ExcludeApp Groove, OneDrive, OneNote, Publisher
+    # Historical inventory layout: deliberately no AppPathEvidence field. Do not
+    # obtain this snapshot from the new reader or inject new defaults before hashing.
+    $script:historicalBefore = [PSCustomObject][ordered]@{
+      SchemaVersion = 1
+      MachineId     = 'synthetic-machine'
+      Products      = @([PSCustomObject][ordered]@{
+          ProductId = 'Standard2019Volume'; Architecture = '32'; Version = '16.0.10417.20208'
+          VersionSource = 'ActiveProductResources'; Channel = 'PerpetualVL2019'
+          Languages = @('de-de'); PrimaryLanguage = 'de-de'; RegisteredLanguages = @('de-de')
+          ExcludeApp = @('Groove'); Evidence = @('Synthetic pre-fix observation')
+        })
+      Msi = @(); RelatedComponents = @(); Unknowns = @(); RegisteredResources = @()
+      LanguageEvidence = @(); VerificationLimitations = @()
+    }
+    $originalPlan = Get-OfficeDeploymentPlan -Action Migrate -Configuration $recoveryTarget -Inventory $historicalBefore -SourcePath (Join-Path $TestDrive 'media') -RemoveProductId Standard2019Volume
+    $script:originalRecord = [PSCustomObject][ordered]@{
+      SchemaVersion = 1; RunId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; MachineId = 'synthetic-machine'; Action = 'Migrate'
+      Plan = $originalPlan; ConfigurationFingerprint = Get-PSFOfficeFingerprint $recoveryTarget; MediaFingerprint = 'synthetic-media'
+      Phase = 'Remove'; PhaseCompleted = $true; NativeResults = @([PSCustomObject]@{ Phase = 'Remove'; ExitCode = 0 })
+      RebootRequired = $false; CreatedAt = '2026-01-01T00:00:00Z'; UpdatedAt = '2026-01-01T00:01:00Z'
+      Result = [PSCustomObject]@{ Status = 'Failed'; ReasonCode = 'VerificationFailed'; After = [PSCustomObject]@{ Unknowns = @('OfficeResidueWithoutConfiguration') } }
+    }
+    $script:recoveryRoot = Join-Path $TestDrive 'recovery'
+    $null = New-Item -ItemType Directory -Path $recoveryRoot -Force
+    $script:originalPath = Join-Path $recoveryRoot ($originalRecord.RunId + '.json')
+    Write-PSFOfficeJson -Path $originalPath -Value $originalRecord
+    $script:originalHash = (Get-FileHash -LiteralPath $originalPath).Hash
+    $script:descriptor = Get-OfficeDeploymentRecovery -RunId $originalRecord.RunId -LogRoot $recoveryRoot
+    Mock New-PSFOfficeProtectedDirectory { $null = [IO.Directory]::CreateDirectory($Path) }
+    Mock Copy-Item { }
+    Mock Write-OperationResultLog { 'synthetic-log' }
+    Mock Enter-PSFOfficeLock {
+      $lock = [PSCustomObject]@{}
+      $lock | Add-Member ScriptMethod ReleaseMutex { }
+      $lock | Add-Member ScriptMethod Dispose { }
+      $lock
+    }
+    Mock Invoke-PSFOfficeConfiguration {
+      if ($Document.Configuration.Remove) { $script:recoveryRecords = $script:staleRecords }
+      else { $script:recoveryRecords = $script:installedRecords }
+      [PSCustomObject]@{ ExitCode = 0 }
+    }
+  }
+
+  It 'loads the historical fingerprint unchanged and previews without launching ODT' {
+    $descriptor.Record.Plan.Before.PSObject.Properties.Name | Should -Not -Contain AppPathEvidence
+    (Get-PSFOfficeFingerprint $descriptor.Record.Plan.Before) | Should -Be $originalRecord.Plan.InventoryFingerprint
+    (Get-OfficeInventory).AppPathEvidence.Count | Should -Be 6
+    $preview = Resume-OfficeMigration -Recovery $descriptor -OdtPath C:\ODT\setup.exe -DryRun
+    $preview.Status | Should -Be Preview
+    $preview.Configuration.Version | Should -Be $recoveryTarget.Version
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 0
+    Should -Invoke New-PSFOfficeProtectedDirectory -Times 0
+    (Get-FileHash -LiteralPath $originalPath).Hash | Should -Be $originalHash
+  }
+
+  It 'installs once without repeating removal and retains both journals' {
+    $key = New-Object Security.SecureString
+    foreach ($character in 'AAAAA-BBBBB-CCCCC-DDDDD-EEEEE'.ToCharArray()) { $key.AppendChar($character) }
+    try {
+      $result = Resume-OfficeMigration -Recovery $descriptor -OdtPath C:\ODT\setup.exe -ProductKey $key -Confirm:$false
+      $result.Status | Should -Be Completed
+      $result.Activation.Status | Should -Be Licensed
+      $result.RunId | Should -Not -Be $originalRecord.RunId
+      $newRecord = (Get-OfficeDeploymentRecovery -RunId $result.RunId -LogRoot $recoveryRoot).Record
+      $newRecord.Plan.RemoveProductId.Count | Should -Be 0
+      $newRecord.Plan.RemoveMsi | Should -BeFalse
+      $newRecord.Plan.Configuration.ExcludeApp | Should -Be $recoveryTarget.ExcludeApp
+      $newRecord.Plan.Configuration.Language | Should -Be @('de-de')
+      (Get-Content -LiteralPath $result.RecoveryPath -Raw) | Should -Not -Match 'AAAAA'
+      Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -Exactly
+      Should -Invoke Invoke-PSFOfficeConfiguration -Times 0 -ParameterFilter { $Document.Configuration.Remove }
+      Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -ParameterFilter { $null -ne $ProductKey -and $Document.Configuration.Add.Version -eq '16.0.10417.20211' }
+      (Get-FileHash -LiteralPath $originalPath).Hash | Should -Be $originalHash
+    }
+    finally { $key.Dispose() }
+  }
+
+  It 'also completes a fresh migration when removal leaves only stale App Paths' {
+    # Start with real classification of synthetic x86 registry evidence.
+    $script:recoveryRecords = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    $plan = Get-OfficeDeploymentPlan -Action Migrate -Configuration $recoveryTarget -SourcePath (Join-Path $TestDrive 'media') -RemoveProductId Standard2019Volume
+    $result = Switch-OfficeDeployment -Plan $plan -OdtPath C:\ODT\setup.exe -LogRoot $recoveryRoot -Confirm:$false
+    $result.Status | Should -Be Completed
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 2 -Exactly
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -ParameterFilter { $Document.Configuration.Remove }
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 1 -ParameterFilter { $Document.Configuration.Add }
+  }
+
+  It 'keeps <Guard> blocking recovery without a native launch' -ForEach @(
+    @{ Guard = 'busy'; Reason = 'DeploymentBusy' }
+    @{ Guard = 'reboot'; Reason = 'RebootRequired' }
+    @{ Guard = 'uncertain target'; Reason = 'Conflict' }
+    @{ Guard = 'unsupported checkpoint'; Reason = 'UnsupportedRecoveryState' }
+    @{ Guard = 'new product'; Reason = 'Conflict' }
+  ) {
+    switch ($Guard) {
+      busy { Mock Get-PSFOfficeActivity { [PSCustomObject]@{ Busy = $true; Apps = @() } } }
+      reboot { Mock Test-PendingReboot { [PSCustomObject]@{ PendingReboot = $true } } }
+      'uncertain target' { Mock Get-PSFOfficePathAttribute { throw [UnauthorizedAccessException]::new('Synthetic denial') } }
+      'unsupported checkpoint' {
+        $originalRecord.Phase = 'Migrate'
+        $originalRecord.PhaseCompleted = $false
+        Write-PSFOfficeJson -Path $originalPath -Value $originalRecord
+      }
+      'new product' {
+        $unexpected = New-TestOfficeInventory (New-OfficeDeploymentConfiguration -TargetProductId O365ProPlusRetail)
+        Mock Get-OfficeInventory { $unexpected }
+      }
+    }
+    (Resume-OfficeMigration -Recovery $descriptor -OdtPath C:\ODT\setup.exe -Confirm:$false).ReasonCode | Should -Be $Reason
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 0
+  }
+
+  It 'rejects <Guard> before continuing a historical journal' -ForEach @(
+    @{ Guard = 'wrong machine' }, @{ Guard = 'changed media' }, @{ Guard = 'altered historical inventory' }
+  ) {
+    switch ($Guard) {
+      'wrong machine' { Mock Get-PSFOfficeMachineId { 'different-machine' } }
+      'changed media' { Mock Test-OfficeDeploymentMedia { [PSCustomObject]@{ Valid = $true; Fingerprint = 'different' } } }
+      'altered historical inventory' {
+        $originalRecord.Plan.Before | Add-Member NoteProperty AppPathEvidence @()
+        Write-PSFOfficeJson -Path $originalPath -Value $originalRecord
+      }
+    }
+    { Resume-OfficeMigration -Recovery $descriptor -OdtPath C:\ODT\setup.exe -Confirm:$false } | Should -Throw
+    Should -Invoke Invoke-PSFOfficeConfiguration -Times 0
   }
 }
 

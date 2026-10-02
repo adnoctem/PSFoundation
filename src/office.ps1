@@ -954,7 +954,7 @@ function Get-PSFOfficeRegistrySnapshot {
             elseif ($name -eq '' -and $path -like '*\App Paths\*') {
               # An App Paths default value is the registered executable path. It
               # separates Click-to-Run residue from ordinary MSI registration.
-              $values['(default)'] = $key.GetValue($name)
+              $values['(default)'] = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
             }
           }
           [PSCustomObject]@{
@@ -1072,6 +1072,146 @@ function Resolve-PSFOfficeInstalledVersion {
   $result
 }
 
+function Get-PSFOfficePathEnvironment {
+  [CmdletBinding()]
+  param ([string]$View)
+
+  # Expand against the registration's view, not the PowerShell process's bitness.
+  $program = $env:ProgramFiles
+  $common = $env:CommonProgramFiles
+  if ([Environment]::Is64BitOperatingSystem) {
+    $program = $env:ProgramW6432
+    $common = $env:CommonProgramW6432
+    if ($View -eq 'Registry32') {
+      $program = ${env:ProgramFiles(x86)}
+      $common = ${env:CommonProgramFiles(x86)}
+    }
+  }
+  @{
+    ProgramFiles              = $program
+    CommonProgramFiles        = $common
+    'ProgramFiles(x86)'       = ${env:ProgramFiles(x86)}
+    'CommonProgramFiles(x86)' = ${env:CommonProgramFiles(x86)}
+    ProgramW6432              = $env:ProgramW6432
+    CommonProgramW6432        = $env:CommonProgramW6432
+    SystemDrive               = $env:SystemDrive
+    SystemRoot                = $env:SystemRoot
+    windir                    = $env:SystemRoot
+  }
+}
+
+function Get-PSFOfficePathAttribute {
+  [CmdletBinding()]
+  param ([string]$LiteralPath)
+
+  # Unlike File.Exists/Test-Path, failures are not collapsed into absence.
+  [IO.File]::GetAttributes($LiteralPath)
+}
+
+function Get-PSFOfficeAppPathEvidence {
+  [CmdletBinding()]
+  param (
+    [object]$RawTarget,
+    [string]$View,
+    [string]$RegistryPath
+  )
+
+  $evidence = [PSCustomObject][ordered]@{
+    RegistryView   = $View
+    RegistryPath   = $RegistryPath
+    RawTarget      = $RawTarget
+    ResolvedTarget = $null
+    State          = 'Uncertain'
+    Reason         = 'InvalidTarget'
+  }
+  try {
+    if ($RawTarget -isnot [string] -or [string]::IsNullOrWhiteSpace($RawTarget) -or $View -notin @('Registry32', 'Registry64')) {
+      return $evidence
+    }
+    $path = $RawTarget.Trim()
+    if ($path.StartsWith('"') -and $path.EndsWith('"') -and $path.Length -gt 1) {
+      $path = $path.Substring(1, $path.Length - 2)
+    }
+    $environment = Get-PSFOfficePathEnvironment $View
+    foreach ($token in @([regex]::Matches($path, '%([^%]+)%'))) {
+      $name = $token.Groups[1].Value
+      if (-not $environment.ContainsKey($name) -or [string]::IsNullOrWhiteSpace($environment[$name])) {
+        $evidence.Reason = 'UnresolvedEnvironment'
+        return $evidence
+      }
+      $path = $path.Replace($token.Value, [string]$environment[$name])
+    }
+    # Reject UNC/device/provider paths, wildcards, arguments, ADS and ambiguous
+    # segments before filesystem access. No incidental network traversal is allowed.
+    if ($path -notmatch '^[A-Za-z]:\\' -or $path -match '[%"*?<>|/\x00-\x1f]' -or
+      $path.Substring(2).Contains(':') -or $path -match '\\\\|\\\.{1,2}(\\|$)|[. ](\\|$)' -or
+      $path -match '\\(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\\|\.|$)' -or
+      @($path.Substring(3) -split '\\' | Where-Object { $_.Length -gt 255 }).Count) {
+      return $evidence
+    }
+    $expectedName = ($RegistryPath -split '\\')[-1]
+    if ($expectedName -notin @('WINWORD.EXE', 'EXCEL.EXE', 'OUTLOOK.EXE') -or [IO.Path]::GetFileName($path) -ne $expectedName) {
+      return $evidence
+    }
+    $path = [IO.Path]::GetFullPath($path)
+    $evidence.ResolvedTarget = $path
+    $root = [IO.Path]::GetPathRoot($path)
+    $drive = New-Object IO.DriveInfo($root)
+    if ($drive.DriveType -ne [IO.DriveType]::Fixed -or -not $drive.IsReady) {
+      $evidence.Reason = 'UnsupportedDrive'
+      return $evidence
+    }
+    # Do not infer absence from a redirected Windows system path in WOW64.
+    if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess -and
+      (($env:SystemRoot -and $path.StartsWith($env:SystemRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) -or $path -match '~\d')) {
+      $evidence.Reason = 'FilesystemRedirection'
+      return $evidence
+    }
+    $cursor = $root
+    $parts = @($path.Substring($root.Length) -split '\\')
+    # Inspect ancestors before descending: junctions cannot induce network access
+    # or turn an unavailable target into evidence of a removed executable.
+    $attributes = Get-PSFOfficePathAttribute $cursor
+    if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
+      $evidence.Reason = 'ReparsePoint'
+      return $evidence
+    }
+    for ($index = 0; $index -lt $parts.Count; $index++) {
+      $cursor = [IO.Path]::Combine($cursor, $parts[$index])
+      try {
+        $attributes = Get-PSFOfficePathAttribute $cursor
+      }
+      catch {
+        $errorType = $_.Exception.GetBaseException()
+        if ($errorType -is [IO.FileNotFoundException] -or $errorType -is [IO.DirectoryNotFoundException]) {
+          $evidence.State = 'Missing'
+          $evidence.Reason = 'TargetNotFound'
+          return $evidence
+        }
+        throw
+      }
+      if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
+        $evidence.Reason = 'ReparsePoint'
+        return $evidence
+      }
+      $isDirectory = [bool]($attributes -band [IO.FileAttributes]::Directory)
+      if ($isDirectory -ne ($index -lt ($parts.Count - 1))) {
+        $evidence.Reason = 'UnexpectedPathType'
+        return $evidence
+      }
+    }
+    $evidence.State = 'Present'
+    $evidence.Reason = 'ExecutablePresent'
+  }
+  catch {
+    $evidence.Reason = 'ProbeFailed'
+    if ($_.Exception.GetBaseException() -is [UnauthorizedAccessException] -or $_.Exception.GetBaseException() -is [Security.SecurityException]) {
+      $evidence.Reason = 'AccessDenied'
+    }
+  }
+  $evidence
+}
+
 function Get-OfficeInventory {
   <#
     .SYNOPSIS
@@ -1084,6 +1224,9 @@ function Get-OfficeInventory {
       agreeing Version values on every active per-product resource when the
       documented key or value is absent. VersionSource and Evidence identify the
       observation used; telemetry never establishes the installed build.
+      AppPathEvidence retains registered targets and present, missing or uncertain
+      filesystem observations. Confirmed missing references alone do not block a
+      clean inventory. Discovery never deletes stale registrations.
     .EXAMPLE
       Get-OfficeInventory
   #>
@@ -1122,16 +1265,22 @@ function Get-OfficeInventory {
     [void]$unknowns.Add('RegistryDiscoveryFailed')
   }
   $configuredRecords = @($records | Where-Object { $_.Path -like '*ClickToRun\Configuration' })
-  # Only Click-to-Run artifacts can evidence Click-to-Run residue. App Paths are
-  # ordinary registration on any MSI install and count solely when their
-  # registered executable resolves into a Click-to-Run layout.
+  $appPaths = @($records | Where-Object { $_.Path -like '*\App Paths\*' } | ForEach-Object {
+      Get-PSFOfficeAppPathEvidence -RawTarget $_.Values['(default)'] -View $_.View -RegistryPath $_.Path
+    })
+  # Genuine registry residue remains blocking. App Paths also occur on MSI
+  # installs; only confirmed missing targets dismiss a Click-to-Run reference.
   $residueRecords = @($records | Where-Object {
       $_.Path -like '*ClickToRun\ProductReleaseIDs*' -or
-      $_.Path -like '*ClickToRun\Inventory\Office\16.0' -or
-      ($_.Path -like '*\App Paths\*' -and [string]$_.Values['(default)'] -match 'Office16|ClickToRun')
+      $_.Path -like '*ClickToRun\Inventory\Office\16.0'
+    })
+  $appResidue = @($appPaths | Where-Object {
+      $_.State -ne 'Missing' -and
+      ([string]$_.RawTarget -match 'Office16|ClickToRun' -or $_.ResolvedTarget -match 'Office16|ClickToRun' -or
+      ($_.State -eq 'Uncertain' -and $_.ResolvedTarget -notmatch '\\Office(?:11|12|14|15)\\(?:WINWORD|EXCEL|OUTLOOK)\.EXE$'))
     })
 
-  if (-not $configuredRecords.Count -and $residueRecords.Count) {
+  if (-not $configuredRecords.Count -and ($residueRecords.Count -or $appResidue.Count)) {
     [void]$unknowns.Add('OfficeResidueWithoutConfiguration')
   }
   $registeredResources = @($records | Where-Object { $_.Path -like '*ClickToRun\ProductReleaseIDs*' } | ForEach-Object {
@@ -1384,6 +1533,7 @@ function Get-OfficeInventory {
     RelatedComponents       = @($related | Sort-Object ProductCode, RegistryView)
     Unknowns                = @($unknowns | Sort-Object -Unique)
     RegisteredResources     = $registeredResources
+    AppPathEvidence         = $appPaths
     LanguageEvidence        = @($records | Where-Object { $_.Path -like '*\Common\LanguageResources' } | ForEach-Object {
         [PSCustomObject]@{ View = $_.View; Path = $_.Path; SKULanguage = $_.Values['SKULanguage']; InstallLanguage = $_.Values['InstallLanguage'] }
       })
