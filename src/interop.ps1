@@ -437,6 +437,306 @@ function Add-OutlookStoreRoot {
   throw "Outlook store was added but could not be located by path: $_resolvedPath"
 }
 
+function Get-PSFOutlookPathDriveType {
+  [CmdletBinding()]
+  param ([string]$Path)
+
+  (New-Object IO.DriveInfo([IO.Path]::GetPathRoot($Path))).DriveType
+}
+
+function Resolve-PSFOutlookFilePath {
+  [CmdletBinding()]
+  param (
+    [string]$LiteralPath,
+    [switch]$SourcePst
+  )
+
+  if ([string]::IsNullOrWhiteSpace($LiteralPath)) { throw 'A nonempty local file path is required.' }
+  $_provider = $null
+  $_drive = $null
+  $_path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LiteralPath, [ref]$_provider, [ref]$_drive)
+  if ($_provider.Name -ne 'FileSystem' -or $_path -notmatch '^[A-Za-z]:\\') {
+    throw "A local filesystem path is required: '$LiteralPath'."
+  }
+  if ((Get-PSFOutlookPathDriveType $_path) -notin @([IO.DriveType]::Fixed, [IO.DriveType]::Removable)) {
+    throw "Network or unavailable drives are not supported: '$_path'."
+  }
+  $_file = Get-Item -LiteralPath $_path -Force -ErrorAction Stop
+  if ($_file.PSIsContainer) { throw "Expected an existing file: '$_path'." }
+  if ($SourcePst -and ($_file.Extension -ne '.pst' -or ($_file.Attributes -band [IO.FileAttributes]::ReadOnly))) {
+    throw "The source must be an existing writable .pst file: '$_path'."
+  }
+  # Reject traversal rather than claiming to resolve symlink/junction identities.
+  $_ancestor = $_path
+  while ($_ancestor) {
+    $_item = Get-Item -LiteralPath $_ancestor -Force -ErrorAction Stop
+    if ($_item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+      throw "Reparse-point paths are not supported for Outlook file identity: '$_ancestor'."
+    }
+    $_ancestor = Split-Path -Path $_ancestor -Parent
+  }
+  Resolve-LongPath -LiteralPath $_path
+}
+
+function Get-PSFOutlookProperty {
+  [CmdletBinding()]
+  param ([object]$InputObject, [string]$Name)
+
+  if ($null -eq $InputObject) { throw "Cannot read Outlook property '$Name' from a null reference." }
+  $_property = $InputObject.PSObject.Properties[$Name]
+  if ($null -eq $_property) { throw "Outlook property '$Name' is unavailable." }
+  # Ordinary PowerShell property syntax can silently turn a throwing getter into
+  # null. Calling the accessor as a method preserves the inspection failure.
+  return , ($_property.get_Value())
+}
+
+function Get-PSFOutlookPstSnapshot {
+  [CmdletBinding()]
+  param ([object]$Namespace, [string]$Path)
+
+  $_ids = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  $_matches = New-Object 'Collections.Generic.List[object]'
+  $_stores = $null
+  try {
+    $_stores = Get-PSFOutlookProperty $Namespace Stores
+    $_count = Get-PSFOutlookProperty $_stores Count
+    if ($null -eq $_count -or $_count -isnot [int] -or $_count -lt 0) { throw 'Outlook returned an invalid store count.' }
+    for ($_index = 1; $_index -le $_count; $_index++) {
+      $_store = $null
+      try {
+        $_store = $_stores.Item($_index)
+        $_id = [string](Get-PSFOutlookProperty $_store StoreID)
+        if ([string]::IsNullOrWhiteSpace($_id) -or -not $_ids.Add($_id)) { throw 'Outlook returned missing or duplicate StoreIDs.' }
+        $_filePath = [string](Get-PSFOutlookProperty $_store FilePath)
+        if ([string]::IsNullOrWhiteSpace($_filePath)) { continue }
+        $_resolved = Resolve-PSFOutlookFilePath $_filePath
+        if ([StringComparer]::OrdinalIgnoreCase.Equals($_resolved, $Path)) {
+          $_matches.Add([PSCustomObject]@{ StoreId = $_id; DisplayName = [string](Get-PSFOutlookProperty $_store DisplayName) })
+        }
+      }
+      finally { Remove-ComObject $_store }
+    }
+    [PSCustomObject]@{ Ids = $_ids; Matches = $_matches.ToArray() }
+  }
+  catch { throw (New-Object InvalidOperationException("Cannot inspect Outlook stores for PST '$Path': $($_.Exception.Message)", $_.Exception)) }
+  finally { Remove-ComObject $_stores }
+}
+
+function Get-PSFOutlookPstRoot {
+  [CmdletBinding()]
+  param ([object]$Namespace, [string]$Path, [string]$StoreId)
+
+  $_store = $null
+  $_root = $null
+  try {
+    $_store = $Namespace.GetStoreFromID($StoreId)
+    if ((Get-PSFOutlookProperty $_store StoreID) -ne $StoreId -or (Resolve-PSFOutlookFilePath (Get-PSFOutlookProperty $_store FilePath)) -ne $Path) {
+      throw "Outlook store identity changed for PST '$Path'."
+    }
+    $_root = $_store.GetRootFolder()
+    if ($null -eq $_root -or (Get-PSFOutlookProperty $_root StoreID) -ne $StoreId) { throw "Outlook returned no matching root for PST '$Path'." }
+    $_owned = $_root
+    $_root = $null
+    return , $_owned
+  }
+  finally { Remove-ComObject $_root $_store }
+}
+
+function Remove-PSFOutlookPstAttachment {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mandatory cleanup of a uniquely identified attachment created by Open; not a new optional user operation.')]
+  [CmdletBinding()]
+  param ([object]$Namespace, [string]$Path, [string]$StoreId, [object]$Root)
+
+  $_snapshot = Get-PSFOutlookPstSnapshot -Namespace $Namespace -Path $Path
+  if (-not $_snapshot.Ids.Contains($StoreId)) { return }
+  if (@($_snapshot.Matches | Where-Object { $_.StoreId -ieq $StoreId }).Count -ne 1) {
+    throw "The recorded Outlook StoreID no longer matches PST '$Path'."
+  }
+  $_temporaryRoot = $null
+  try {
+    if ($null -eq $Root) {
+      $_temporaryRoot = Get-PSFOutlookPstRoot -Namespace $Namespace -Path $Path -StoreId $StoreId
+      $Root = $_temporaryRoot
+    }
+    if ((Get-PSFOutlookProperty $Root StoreID) -ne $StoreId) { throw "The owned Outlook root no longer matches PST '$Path'." }
+    $null = $Namespace.RemoveStore($Root)
+  }
+  finally { Remove-ComObject $_temporaryRoot }
+}
+
+function New-PSFOutlookPstContext {
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates an in-process lifetime object only.')]
+  [CmdletBinding()]
+  param ([string]$Path, [object]$Match, [object]$Root, [object]$Namespace, [bool]$AttachedByCall)
+
+  # Keep the cleanup identity separate from the caller's informational fields.
+  $_state = [PSCustomObject]@{ Path = $Path; StoreId = $Match.StoreId; Root = $Root; Namespace = $Namespace; AttachedByCall = $AttachedByCall; Closed = $false }
+  [PSCustomObject]@{
+    PSTypeName = 'PSFoundation.OutlookPstStoreContext'
+    Path = $Path; StoreId = $Match.StoreId; DisplayName = $Match.DisplayName
+    Root = $Root; Namespace = $Namespace; AttachedByCall = $AttachedByCall; Closed = $false
+    _State     = $_state
+  }
+}
+
+function Open-OutlookPstStore {
+  <#
+    .SYNOPSIS
+      Opens an existing local PST and returns an ownership-aware lifetime context.
+    .DESCRIPTION
+      Reuses a uniquely matching profile attachment or adds the existing file with
+      Namespace.AddStore. Does not create destinations, rename stores or choose a
+      format. ANSI compatibility needs native validation with the installed Outlook.
+      Requires a writable local PST; UNC, network drives and reparse traversal are
+      rejected. Relative paths use PowerShell's current filesystem location and
+      short names are expanded. Hard-link aliases are not detected.
+
+      The returned PSFoundation.OutlookPstStoreContext owns Root and borrows Namespace.
+      Path, StoreId and DisplayName describe the observed store; AttachedByCall marks
+      attachment ownership and Closed tracks cleanup. Private _State is implementation
+      state. Do not edit, serialize or reuse it across processes. Release child COM
+      references before Close-OutlookPstStore, and keep the creating context alive
+      until overlapping consumers finish; contexts are not reference-counted leases.
+
+      Standalone WhatIf/declined confirmation returns no context when attachment is
+      needed. An explicitly documented inspection preview may override WhatIf for
+      this call only, then must close in finally. Outlook may update PST metadata.
+      Existence is rechecked before AddStore, but Outlook has no atomic existing-only
+      open. Do not remove/replace the file or change profile attachments concurrently.
+    .PARAMETER Namespace
+      Borrowed MAPI namespace, normally returned by Connect-Outlook. Never released here.
+    .PARAMETER LiteralPath
+      Existing writable local .pst file. Wildcards are literal; directories are rejected.
+    .EXAMPLE
+      $source = $null
+      try {
+        $source = Open-OutlookPstStore -Namespace $context.Namespace -LiteralPath '.\Archive.pst'
+        if ($null -ne $source) { $source | Select-Object Path, StoreId, DisplayName, AttachedByCall }
+      }
+      finally { if ($null -ne $source) { Close-OutlookPstStore -Context $source } }
+    .EXAMPLE
+      Open-OutlookPstStore -Namespace $context.Namespace -LiteralPath 'D:\Archives\Old mail.pst' -WhatIf
+      Previews a required attachment without adding it. A pre-existing match is returned normally.
+    .LINK
+      https://learn.microsoft.com/en-us/office/vba/api/outlook.namespace.addstore
+  #>
+  [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+  [OutputType([PSCustomObject])]
+  param (
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNull()]
+    [object]$Namespace,
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$LiteralPath
+  )
+
+  $_path = Resolve-PSFOutlookFilePath -LiteralPath $LiteralPath -SourcePst
+  $_snapshot = Get-PSFOutlookPstSnapshot -Namespace $Namespace -Path $_path
+  if ($_snapshot.Matches.Count -gt 1) { throw "Multiple Outlook stores match PST '$_path'." }
+  if (-not $_snapshot.Matches.Count) {
+    if (-not $PSCmdlet.ShouldProcess($_path, 'Attach existing PST to the current Outlook profile')) { return }
+    # Account for attachments that appeared while approval was pending.
+    $_snapshot = Get-PSFOutlookPstSnapshot -Namespace $Namespace -Path $_path
+    if ($_snapshot.Matches.Count -gt 1) { throw "Multiple Outlook stores match PST '$_path'." }
+  }
+  $_initialIds = $_snapshot.Ids
+  $_attempted = $false
+  $_ownedId = $null
+  $_root = $null
+  try {
+    if (-not $_snapshot.Matches.Count) {
+      if ((Resolve-PSFOutlookFilePath -LiteralPath $_path -SourcePst) -ne $_path) { throw "PST path changed before attachment: '$_path'." }
+      $_attempted = $true
+      $null = $Namespace.AddStore($_path)
+      $_snapshot = Get-PSFOutlookPstSnapshot -Namespace $Namespace -Path $_path
+      if ($_snapshot.Matches.Count -ne 1 -or $_initialIds.Contains($_snapshot.Matches[0].StoreId)) {
+        throw "No uniquely identified new Outlook attachment for PST '$_path'."
+      }
+      $_ownedId = $_snapshot.Matches[0].StoreId
+    }
+    $_match = $_snapshot.Matches[0]
+    $_root = Get-PSFOutlookPstRoot -Namespace $Namespace -Path $_path -StoreId $_match.StoreId
+    $_context = New-PSFOutlookPstContext -Path $_path -Match $_match -Root $_root -Namespace $Namespace -AttachedByCall ([bool]$_ownedId)
+    $_root = $null
+    return $_context
+  }
+  catch {
+    $_failure = $_
+    if ($_attempted) {
+      try {
+        if (-not $_ownedId) {
+          $_current = Get-PSFOutlookPstSnapshot -Namespace $Namespace -Path $_path
+          if ($_current.Matches.Count -gt 1) { throw 'Cannot identify a unique attachment to clean up.' }
+          if ($_current.Matches.Count -eq 1 -and -not $_initialIds.Contains($_current.Matches[0].StoreId)) {
+            $_ownedId = $_current.Matches[0].StoreId
+          }
+        }
+        if ($_ownedId) { Remove-PSFOutlookPstAttachment -Namespace $Namespace -Path $_path -StoreId $_ownedId -Root $_root }
+      }
+      catch {
+        $_cleanup = "Cleanup of PST '$_path' could not be completed: $($_.Exception.Message)"
+        $_failure.Exception.Data['OutlookPstCleanupError'] = $_cleanup
+        $_failure.ErrorDetails = New-Object Management.Automation.ErrorDetails("$($_failure.Exception.Message) $_cleanup")
+      }
+    }
+    throw $_failure
+  }
+  finally { Remove-ComObject $_root }
+}
+
+function Close-OutlookPstStore {
+  <#
+    .SYNOPSIS
+      Releases an existing-PST context and detaches only its owned attachment.
+    .DESCRIPTION
+      Checks the recorded StoreID and path before detaching an attachment created by
+      Open-OutlookPstStore. Pre-existing stores and replacement StoreIDs are left alone.
+      Always releases the owned root, clears Root and sets Closed, even on failure.
+      Subsequent calls do nothing. The namespace/application remain borrowed and live.
+      Never deletes, renames, replaces, repairs or compacts files, or quits Outlook.
+
+      This is mandatory finally cleanup, not a second optional profile operation:
+      it does not prompt or honor inherited WhatIf suppression. It can only undo the
+      attachment identified by its context. Detach/inspection failure is terminating
+      and identifies the PST path; the context is closed but the attachment may remain.
+      Callers must release all child COM references first and report cleanup failure
+      without hiding any original processing error. Concurrent profile changes and
+      unobservable reuse of the same store identity cannot be made transactional.
+    .PARAMETER Context
+      Live context returned by Open-OutlookPstStore. Guard null in the caller.
+    .EXAMPLE
+      if ($null -ne $source) { Close-OutlookPstStore -Context $source }
+      Releases a context in finally without releasing its borrowed namespace.
+  #>
+  [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Required lifetime cleanup must undo the context-owned attachment even under inherited WhatIf; no new operation is authorized.')]
+  [CmdletBinding()]
+  param (
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNull()]
+    [object]$Context
+  )
+
+  if ($Context.PSObject.TypeNames -notcontains 'PSFoundation.OutlookPstStoreContext' -or -not $Context.PSObject.Properties['_State']) {
+    throw 'Context must be a live object returned by Open-OutlookPstStore.'
+  }
+  $_state = $Context._State
+  if ($_state.Closed) { return }
+  try {
+    if ($_state.AttachedByCall) {
+      Remove-PSFOutlookPstAttachment -Namespace $_state.Namespace -Path $_state.Path -StoreId $_state.StoreId -Root $_state.Root
+    }
+  }
+  catch { throw (New-Object InvalidOperationException("Cannot detach PST '$($_state.Path)': $($_.Exception.Message)", $_.Exception)) }
+  finally {
+    Remove-ComObject $_state.Root
+    $_state.Root = $null
+    $_state.Closed = $true
+    $Context.Root = $null
+    $Context.Closed = $true
+  }
+}
+
 function Get-OutlookSubFolder {
   <#
     .SYNOPSIS

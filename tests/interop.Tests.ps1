@@ -338,6 +338,385 @@ Describe 'Outlook folder selection plan' {
 }
 
 
+Describe 'Existing Outlook PST lifetime' {
+  BeforeAll {
+    function New-PstTestStore {
+      [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'In-memory COM substitute.')]
+      [CmdletBinding()]
+      param ([string]$Path, [string]$Id = 'pst-id', [string]$Name = 'Same display name')
+      $root = [PSCustomObject]@{ StoreID = $Id; Kind = 'Root'; Acquires = 0; Releases = 0 }
+      $store = [PSCustomObject]@{ Path = $Path; StoreID = $Id; DisplayName = $Name; Root = $root; Kind = 'Store'; Acquires = 0; Releases = 0; RootFailures = 0; FailPath = $false }
+      $store | Add-Member ScriptProperty FilePath { if ($this.FailPath) { throw 'Synthetic FilePath inspection failure' }; $this.Path }
+      $store | Add-Member ScriptMethod GetRootFolder {
+        if ($this.RootFailures -gt 0) { $this.RootFailures--; throw 'Synthetic root acquisition failure' }
+        $this.Root.Acquires++
+        $this.Root
+      }
+      $store
+    }
+  }
+
+  BeforeEach {
+    $script:pstPath = Join-Path $TestDrive ('Archive ä [' + [guid]::NewGuid().ToString('N') + '].pst')
+    [IO.File]::WriteAllText($script:pstPath, 'Synthetic file, never opened by Outlook.')
+    $script:pstStore = New-PstTestStore $script:pstPath
+    $script:pstDuplicate = New-PstTestStore $script:pstPath 'second-id'
+    $script:pstProfile = [PSCustomObject]@{
+      Items = (New-Object Collections.ArrayList); Collections = (New-Object Collections.ArrayList)
+      Added = $script:pstStore; Duplicate = $script:pstDuplicate; Mode = 'Success'
+      Adds = 0; Removes = 0; RemovedId = $null; Accesses = 0; FailItem = 0; FailCount = $false; FailStores = $false; FailRemove = $false
+      DeleteOnAccess = 0; AttachOnAccess = 0; SourcePath = $script:pstPath; LastAddedPath = $null
+    }
+    $script:pstNamespace = [PSCustomObject]@{ Profile = $script:pstProfile; Kind = 'Namespace'; Releases = 0 }
+    $script:pstNamespace | Add-Member ScriptProperty Stores {
+      $this.Profile.Accesses++
+      if ($this.Profile.FailStores) { throw 'Synthetic Stores lookup failure' }
+      if ($this.Profile.DeleteOnAccess -eq $this.Profile.Accesses) { [IO.File]::Delete($this.Profile.SourcePath) }
+      if ($this.Profile.AttachOnAccess -eq $this.Profile.Accesses) { [void]$this.Profile.Items.Add($this.Profile.Added) }
+      $collection = [PSCustomObject]@{ Profile = $this.Profile; Kind = 'Stores'; Acquires = 1; Releases = 0 }
+      $collection | Add-Member ScriptProperty Count {
+        if ($this.Profile.FailCount) { throw 'Synthetic Stores count failure' }
+        $this.Profile.Items.Count
+      }
+      $collection | Add-Member ScriptMethod Item {
+        param($Index)
+        if ($this.Profile.FailItem -eq $Index) { throw 'Synthetic Store inspection failure' }
+        $store = $this.Profile.Items[$Index - 1]
+        $store.Acquires++
+        $store
+      }
+      [void]$this.Profile.Collections.Add($collection)
+      $collection
+    }
+    $script:pstNamespace | Add-Member ScriptMethod GetStoreFromID {
+      param($Id)
+      $stores = @($this.Profile.Items | Where-Object { $_.StoreID -eq $Id })
+      if ($stores.Count -ne 1) { throw 'Synthetic store identity not found' }
+      $stores[0].Acquires++
+      $stores[0]
+    }
+    $script:pstNamespace | Add-Member ScriptMethod AddStore {
+      param($Path)
+      $this.Profile.Adds++
+      $this.Profile.LastAddedPath = $Path
+      if ($this.Profile.Mode -eq 'BeforeThrow') { throw 'Synthetic attach failed before adding' }
+      if ($this.Profile.Mode -eq 'ExistingId') { $this.Profile.Added.Path = $Path; return }
+      if ($this.Profile.Mode -ne 'Invisible') { [void]$this.Profile.Items.Add($this.Profile.Added) }
+      if ($this.Profile.Mode -eq 'InspectAfter') { $this.Profile.FailStores = $true }
+      if ($this.Profile.Mode -eq 'Ambiguous') { [void]$this.Profile.Items.Add($this.Profile.Duplicate) }
+      if ($this.Profile.Mode -eq 'AfterThrow') { throw 'Synthetic attach failed after adding' }
+      'Unexpected AddStore output'
+    }
+    $script:pstNamespace | Add-Member ScriptMethod RemoveStore {
+      param($Root)
+      $this.Profile.Removes++
+      $this.Profile.RemovedId = $Root.StoreID
+      if ($this.Profile.FailRemove) { throw 'Synthetic detach failure' }
+      $match = @($this.Profile.Items | Where-Object { $_.StoreID -eq $Root.StoreID })
+      foreach ($store in $match) { $this.Profile.Items.Remove($store) }
+      'Unexpected RemoveStore output'
+    }
+    Mock Remove-ComObject {
+      foreach ($value in $InputObject) { if ($null -ne $value) { $value.Releases++ } }
+    } -ModuleName PSFoundation
+    Mock Invoke-ComGarbageCollection { throw 'No global teardown permitted' } -ModuleName PSFoundation
+  }
+
+  AfterEach {
+    $script:pstNamespace.Releases | Should -Be 0
+    foreach ($collection in $script:pstProfile.Collections) { $collection.Releases | Should -Be $collection.Acquires }
+    foreach ($store in @($script:pstStore, $script:pstDuplicate)) {
+      $store.Releases | Should -Be $store.Acquires
+      $store.Root.Releases | Should -Be $store.Root.Acquires
+    }
+    Should -Invoke Invoke-ComGarbageCollection -ModuleName PSFoundation -Times 0
+  }
+
+  It 'reuses an existing attachment by path and preserves its name and borrowed namespace' {
+    [void]$script:pstProfile.Items.Add($script:pstDuplicate)
+    $script:pstDuplicate.Path = Join-Path $TestDrive 'different.pst'
+    [IO.File]::WriteAllText($script:pstDuplicate.Path, 'Synthetic other archive')
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    $contexts = @(Open-OutlookPstStore $script:pstNamespace $script:pstPath -WhatIf)
+    $contexts.Count | Should -Be 1
+    $context = $contexts[0]
+    $context.PSObject.TypeNames | Should -Contain 'PSFoundation.OutlookPstStoreContext'
+    $context.StoreId | Should -Be 'pst-id'
+    $context.AttachedByCall | Should -BeFalse
+    [object]::ReferenceEquals($context.Namespace, $script:pstNamespace) | Should -BeTrue
+    @(Close-OutlookPstStore $context).Count | Should -Be 0
+    Close-OutlookPstStore $context
+    $context.Root | Should -BeNullOrEmpty
+    $context.Closed | Should -BeTrue
+    $script:pstProfile.Adds | Should -Be 0
+    $script:pstProfile.Removes | Should -Be 0
+    $script:pstStore.DisplayName | Should -Be 'Same display name'
+    $script:pstStore.Root.Releases | Should -Be 1
+  }
+
+  It 'attaches and detaches once without streaming COM method results' {
+    $contexts = @(Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false)
+    $contexts.Count | Should -Be 1
+    $contexts[0].Path | Should -Be $script:pstPath
+    $contexts[0].AttachedByCall | Should -BeTrue
+    $contexts[0].Closed | Should -BeFalse
+    @(Close-OutlookPstStore $contexts[0]).Count | Should -Be 0
+    Close-OutlookPstStore $contexts[0]
+    $script:pstProfile.Adds | Should -Be 1
+    $script:pstProfile.Removes | Should -Be 1
+    $script:pstProfile.LastAddedPath | Should -Be $script:pstPath
+    $script:pstProfile.RemovedId | Should -Be 'pst-id'
+    Test-Path -LiteralPath $script:pstPath | Should -BeTrue
+  }
+
+  It 'normalizes relative, case, literal brackets, Unicode and short spelling' {
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    $script:shortPstPath = Join-Path $TestDrive 'SOURCE~1.PST'
+    $script:pstStore.Path = $script:shortPstPath
+    $script:pstGetItem = Get-Command Microsoft.PowerShell.Management\Get-Item
+    $script:pstResolveLongPath = (Get-Command PSFoundation\Resolve-LongPath).ScriptBlock
+    Mock Get-Item {
+      if ($LiteralPath -eq $script:shortPstPath) { $LiteralPath = $script:pstPath }
+      & $script:pstGetItem -LiteralPath $LiteralPath -Force -ErrorAction Stop
+    } -ModuleName PSFoundation
+    Mock Resolve-LongPath {
+      if ($LiteralPath -eq $script:shortPstPath) { return $script:pstPath }
+      & $script:pstResolveLongPath -LiteralPath $LiteralPath
+    } -ModuleName PSFoundation
+    Push-Location $TestDrive
+    try {
+      $context = Open-OutlookPstStore $script:pstNamespace ([IO.Path]::GetFileName($script:pstPath).ToUpperInvariant())
+      $context.Path | Should -Be $script:pstPath
+      Close-OutlookPstStore $context
+    }
+    finally { Pop-Location }
+    $script:pstProfile.Adds | Should -Be 0
+  }
+
+  It 'rejects <Case> sources before any Outlook inspection' -ForEach @(
+    @{ Case = 'missing' }, @{ Case = 'directory' }, @{ Case = 'extension' }, @{ Case = 'readonly' },
+    @{ Case = 'provider' }, @{ Case = 'UNC' }, @{ Case = 'mapped network' }, @{ Case = 'empty' }, @{ Case = 'reparse' }
+  ) {
+    $path = $script:pstPath
+    switch ($Case) {
+      missing { $path = Join-Path $TestDrive 'absent.pst' }
+      directory { $path = $TestDrive }
+      extension { $path = Join-Path $TestDrive 'source.ost'; [IO.File]::WriteAllText($path, 'Synthetic OST') }
+      readonly { [IO.File]::SetAttributes($path, [IO.FileAttributes]::ReadOnly) }
+      provider { $path = 'Env:PATH' }
+      UNC { $path = '\\unreachable.invalid\share\archive.pst' }
+      'mapped network' { Mock Get-PSFOutlookPathDriveType { [IO.DriveType]::Network } -ModuleName PSFoundation }
+      empty { $path = ' ' }
+      reparse {
+        Mock Get-Item { [PSCustomObject]@{ PSIsContainer = $false; Extension = '.pst'; Attributes = [IO.FileAttributes]::ReparsePoint } } -ModuleName PSFoundation
+      }
+    }
+    try { { Open-OutlookPstStore $script:pstNamespace $path -Confirm:$false } | Should -Throw }
+    finally { if ($Case -eq 'readonly') { [IO.File]::SetAttributes($path, [IO.FileAttributes]::Normal) } }
+    $script:pstProfile.Accesses | Should -Be 0
+    $script:pstProfile.Adds | Should -Be 0
+  }
+
+  It 'rejects ambiguous matches before attachment or root acquisition' {
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    [void]$script:pstProfile.Items.Add($script:pstDuplicate)
+    { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } | Should -Throw '*Multiple*'
+    $script:pstProfile.Adds | Should -Be 0
+    $script:pstStore.Root.Acquires | Should -Be 0
+  }
+
+  It 'tolerates blank unrelated store paths' {
+    $script:pstDuplicate.Path = ''
+    [void]$script:pstProfile.Items.Add($script:pstDuplicate)
+    $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false
+    Close-OutlookPstStore $context
+    $script:pstProfile.Items.Count | Should -Be 1
+  }
+
+  It 'surfaces <Failure> inspection failure and releases acquired references' -ForEach @(
+    @{ Failure = 'Stores' }, @{ Failure = 'Count' }, @{ Failure = 'Item' }, @{ Failure = 'FilePath' }, @{ Failure = 'unreadable path' }
+  ) {
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    switch ($Failure) {
+      Stores { $script:pstProfile.FailStores = $true }
+      Count { $script:pstProfile.FailCount = $true }
+      Item { $script:pstProfile.FailItem = 1 }
+      FilePath { $script:pstStore.FailPath = $true }
+      'unreadable path' { $script:pstStore.Path = Join-Path $TestDrive 'missing-attached.pst' }
+    }
+    { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } | Should -Throw '*Cannot inspect*'
+    $script:pstProfile.Adds | Should -Be 0
+  }
+
+  It 'returns no context or attachment during standalone WhatIf' {
+    @(Open-OutlookPstStore $script:pstNamespace $script:pstPath -WhatIf).Count | Should -Be 0
+    $script:pstProfile.Adds | Should -Be 0
+  }
+
+  It 'cleans up explicit inspection under inherited WhatIf' {
+    $WhatIfPreference = $true
+    $context = $null
+    try { $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath -WhatIf:$false -Confirm:$false }
+    finally { if ($null -ne $context) { Close-OutlookPstStore $context } }
+    $script:pstProfile.Adds | Should -Be 1
+    $script:pstProfile.Removes | Should -Be 1
+  }
+
+  It 'rechecks file existence immediately before attaching' {
+    $script:pstProfile.DeleteOnAccess = 2
+    { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } | Should -Throw
+    $script:pstProfile.Adds | Should -Be 0
+  }
+
+  It 'reuses an attachment that appeared before the attachment call without claiming it' {
+    $script:pstProfile.AttachOnAccess = 2
+    $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false
+    $context.AttachedByCall | Should -BeFalse
+    Close-OutlookPstStore $context
+    $script:pstProfile.Adds | Should -Be 0
+    $script:pstProfile.Removes | Should -Be 0
+  }
+
+  It 'handles <Failure> during opening without detaching unrelated stores' -ForEach @(
+    @{ Failure = 'BeforeThrow'; Removes = 0 }, @{ Failure = 'AfterThrow'; Removes = 1 },
+    @{ Failure = 'Ambiguous'; Removes = 0 }, @{ Failure = 'Invisible'; Removes = 0 },
+    @{ Failure = 'Root'; Removes = 1 }, @{ Failure = 'Context'; Removes = 1 }, @{ Failure = 'InspectAfter'; Removes = 0 }
+  ) {
+    $script:pstProfile.Mode = $Failure
+    if ($Failure -eq 'Root') { $script:pstStore.RootFailures = 1 }
+    if ($Failure -eq 'Context') { Mock New-PSFOutlookPstContext { throw 'Synthetic context construction failure' } -ModuleName PSFoundation }
+    { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } | Should -Throw
+    $script:pstProfile.Removes | Should -Be $Removes
+    if ($Removes) { $script:pstProfile.RemovedId | Should -Be 'pst-id' }
+  }
+
+  It 'retains the opening error and reports rollback failure' {
+    $script:pstProfile.Mode = 'AfterThrow'
+    $script:pstProfile.FailRemove = $true
+    $failure = $null
+    try { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } catch { $failure = $_ }
+    $failure.Exception.Message | Should -Match 'attach failed after adding'
+    $failure.Exception.Data['OutlookPstCleanupError'] | Should -Match 'detach failure'
+    $failure.ErrorDetails.Message | Should -Match ([regex]::Escape($script:pstPath))
+    $script:pstProfile.Items.Count | Should -Be 1
+  }
+
+  It 'never claims a previously observed StoreID after AddStore' {
+    $script:pstStore.Path = ''
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    $script:pstProfile.Mode = 'ExistingId'
+    { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } | Should -Throw '*uniquely identified new*'
+    $script:pstProfile.Removes | Should -Be 0
+    $script:pstStore.Root.Acquires | Should -Be 0
+  }
+
+  It 'rejects <Identity> StoreIDs without mutation' -ForEach @(@{ Identity = 'missing' }, @{ Identity = 'duplicate' }) {
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    if ($Identity -eq 'missing') { $script:pstStore.StoreID = '' }
+    else {
+      $script:pstDuplicate.StoreID = $script:pstStore.StoreID
+      [void]$script:pstProfile.Items.Add($script:pstDuplicate)
+    }
+    { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } | Should -Throw '*StoreIDs*'
+    $script:pstProfile.Adds | Should -Be 0
+    $script:pstProfile.Removes | Should -Be 0
+  }
+
+  It 'leaves a pre-existing store attached after <Failure> lookup failure' -ForEach @(@{ Failure = 'root' }, @{ Failure = 'context' }) {
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    if ($Failure -eq 'root') { $script:pstStore.RootFailures = 1 }
+    else { Mock New-PSFOutlookPstContext { throw 'Synthetic context construction failure' } -ModuleName PSFoundation }
+    { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } | Should -Throw
+    $script:pstProfile.Adds | Should -Be 0
+    $script:pstProfile.Removes | Should -Be 0
+  }
+
+  It 'reports a mismatched root identity without detaching it' {
+    $script:pstStore.Root.StoreID = 'unrelated-root'
+    $failure = $null
+    try { Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false } catch { $failure = $_ }
+    $failure.Exception.Message | Should -Match 'no matching root'
+    $failure.Exception.Data['OutlookPstCleanupError'] | Should -Match 'no matching root'
+    $script:pstProfile.Removes | Should -Be 0
+    $script:pstStore.Root.Releases | Should -Be 2
+  }
+
+  It 'never detaches an externally <State> attachment' -ForEach @(@{ State = 'removed' }, @{ State = 'replaced' }) {
+    $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false
+    $script:pstProfile.Items.Clear()
+    if ($State -eq 'replaced') { [void]$script:pstProfile.Items.Add($script:pstDuplicate) }
+    Close-OutlookPstStore $context
+    $context.Closed | Should -BeTrue
+    $script:pstProfile.Removes | Should -Be 0
+  }
+
+  It 'closes and releases once after <Failure> cleanup failure' -ForEach @(@{ Failure = 'detach' }, @{ Failure = 'inspection' }) {
+    $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false
+    if ($Failure -eq 'detach') { $script:pstProfile.FailRemove = $true }
+    else { $script:pstProfile.FailStores = $true }
+    $failureRecord = $null
+    try { Close-OutlookPstStore $context } catch { $failureRecord = $_ }
+    $failureRecord.Exception.Message | Should -Match ([regex]::Escape($script:pstPath))
+    $context.Closed | Should -BeTrue
+    $context.Root | Should -BeNullOrEmpty
+    $attempts = $script:pstProfile.Removes
+    Close-OutlookPstStore $context
+    $script:pstProfile.Removes | Should -Be $attempts
+    $script:pstStore.Root.Releases | Should -Be 1
+  }
+
+  It 'refuses detachment when the recorded StoreID now identifies another path' {
+    $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false
+    $script:pstStore.Path = Join-Path $TestDrive 'replacement.pst'
+    [IO.File]::WriteAllText($script:pstStore.Path, 'Synthetic replacement')
+    { Close-OutlookPstStore $context } | Should -Throw '*no longer matches*'
+    $context.Closed | Should -BeTrue
+    $script:pstProfile.Removes | Should -Be 0
+  }
+
+  It 'keeps legacy named-store lookup and Unicode destination creation usable' {
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    $root = Get-OutlookStoreRoot -Namespace $script:pstNamespace -Name 'Same display name'
+    [object]::ReferenceEquals($root, $script:pstStore.Root) | Should -BeTrue
+    & (Get-Module PSFoundation) { param($value) Remove-ComObject $value } $root
+    $script:pstProfile.Items.Clear()
+    $script:pstNamespace | Add-Member NoteProperty Format $null
+    $script:pstNamespace | Add-Member ScriptMethod AddStoreEx {
+      param($Path, $Type)
+      $this.Format = $Type
+      $this.Profile.Added.Path = $Path
+      [void]$this.Profile.Items.Add($this.Profile.Added)
+    }
+    $destination = Join-Path $TestDrive 'new-destination.pst'
+    $root = Add-OutlookStoreRoot -Namespace $script:pstNamespace -Path $destination
+    $script:pstNamespace.Format | Should -Be 2
+    $script:pstStore.FilePath | Should -Be $destination
+    [object]::ReferenceEquals($root, $script:pstStore.Root) | Should -BeTrue
+    & (Get-Module PSFoundation) { param($value) Remove-ComObject $value } $root
+  }
+
+  It 'does not use edited public metadata to acquire detachment authority' {
+    [void]$script:pstProfile.Items.Add($script:pstStore)
+    $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath
+    $context.AttachedByCall = $true
+    $context.StoreId = 'second-id'
+    Close-OutlookPstStore $context
+    $script:pstProfile.Removes | Should -Be 0
+  }
+
+  It 'rejects ordinary and deserialized contexts' {
+    { Close-OutlookPstStore ([PSCustomObject]@{ Root = $script:pstStore.Root }) } | Should -Throw '*live object*'
+    $context = Open-OutlookPstStore $script:pstNamespace $script:pstPath -Confirm:$false
+    try {
+      # Do not serialize live references: even inspection of COM getters could
+      # acquire new objects. Reproduce only the deserialized type marker.
+      $copy = [PSCustomObject]@{ PSTypeName = 'Deserialized.PSFoundation.OutlookPstStoreContext'; Root = $null; _State = $null }
+      { Close-OutlookPstStore $copy } | Should -Throw '*live object*'
+    }
+    finally { Close-OutlookPstStore $context }
+  }
+}
+
 Describe 'Get-OutlookRepairToolInfo' {
   It 'classifies executable version <Version> as targeted=<Supported>' -ForEach @(
     @{ Version = '12.0.6650.5000'; Supported = $false }

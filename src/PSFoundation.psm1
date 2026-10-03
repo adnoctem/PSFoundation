@@ -81,6 +81,8 @@ $publicFunctions = @(
   'Connect-Outlook',
   'Get-OutlookStoreRoot',
   'Add-OutlookStoreRoot',
+  'Open-OutlookPstStore',
+  'Close-OutlookPstStore',
   'Get-OutlookSubFolder',
   'Get-OutlookStandardFolderIdentity',
   'Get-OutlookFolderPlan',
