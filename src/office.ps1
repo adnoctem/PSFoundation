@@ -540,11 +540,15 @@ function Stop-PSFOfficeOperation {
     $Reason,
 
     [string]
-    $Message
+    $Message,
+
+    [object]
+    $Diagnostic
   )
 
   $exception = New-Object InvalidOperationException($Message)
   $exception.Data['OfficeReason'] = $Reason
+  if ($Diagnostic) { $exception.Data['OfficeDiagnostic'] = $Diagnostic }
   throw $exception
 }
 
@@ -2258,21 +2262,41 @@ function Assert-PSFOfficeProtectedPath {
   [CmdletBinding()]
   param (
     [string]
-    $Path
+    $Path,
+
+    [string]
+    $ObjectKind = 'DeploymentFile'
   )
 
-  Assert-PSFOfficePath $Path
-  $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+  $diagnostic = [ordered]@{ Stage = 'Path'; ObjectKind = $ObjectKind; Path = $Path; Sid = $null; Rights = $null; IsInherited = $null; InheritanceFlags = $null; PropagationFlags = $null }
+  try {
+    Assert-PSFOfficePath $Path
+    $diagnostic.Stage = 'AccessControlRead'
+    $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+  }
+  catch {
+    $reason = $_.Exception.Data['OfficeReason']
+    if (-not $reason) { $reason = 'UntrustedMedia' }
+    Stop-PSFOfficeOperation $reason "Cannot validate $ObjectKind at '$Path' ($($diagnostic.Stage))." ([PSCustomObject]$diagnostic)
+  }
   $trusted = @('S-1-5-18', 'S-1-5-32-544')
   $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
   if ($owner -notin $trusted) {
-    Stop-PSFOfficeOperation UntrustedMedia 'Deployment files must be owned by Administrators or SYSTEM.'
+    $diagnostic.Stage = 'Owner'
+    $diagnostic.Sid = $owner
+    Stop-PSFOfficeOperation UntrustedMedia "Untrusted owner SID $owner on $ObjectKind at '$Path'; Administrators or SYSTEM ownership is required." ([PSCustomObject]$diagnostic)
   }
   foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
     $write = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor
     [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
     if ($rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band $write) -and $rule.IdentityReference.Value -notin $trusted) {
-      Stop-PSFOfficeOperation UntrustedMedia 'Deployment files grant write access outside Administrators/SYSTEM.'
+      $diagnostic.Stage = 'WriteGrant'
+      $diagnostic.Sid = $rule.IdentityReference.Value
+      $diagnostic.Rights = [string]$rule.FileSystemRights
+      $diagnostic.IsInherited = $rule.IsInherited
+      $diagnostic.InheritanceFlags = [string]$rule.InheritanceFlags
+      $diagnostic.PropagationFlags = [string]$rule.PropagationFlags
+      Stop-PSFOfficeOperation UntrustedMedia "Untrusted write grant for SID $($diagnostic.Sid) on $ObjectKind at '$Path': $($diagnostic.Rights); inherited=$($diagnostic.IsInherited); inheritance=$($diagnostic.InheritanceFlags); propagation=$($diagnostic.PropagationFlags)." ([PSCustomObject]$diagnostic)
     }
   }
 }
@@ -2540,14 +2564,19 @@ function Test-OfficeDeploymentMedia {
   )
 
   $manifest = $null
+  $stage = 'ProtectedPath'
   try {
-    Assert-PSFOfficeProtectedPath $SourcePath
+    Assert-PSFOfficeProtectedPath $SourcePath -ObjectKind MediaDirectory
     $path = Join-Path $SourcePath 'psfoundation-office-media.json'
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
       Stop-PSFOfficeOperation ReprepareMedia 'No schema-2 manifest exists; prepare this package again.'
     }
-    Assert-PSFOfficeProtectedPath $path
-    $manifest = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    Assert-PSFOfficeProtectedPath $path -ObjectKind MediaManifest
+    $stage = 'Read'
+    $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop
+    $stage = 'Json'
+    $manifest = $json | ConvertFrom-Json -ErrorAction Stop
+    $stage = 'Validation'
     $fields = @('SchemaVersion', 'Product', 'Architecture', 'Channel', 'AvailableLanguages', 'Version', 'ToolVersion', 'Files')
     Assert-PSFOfficeField $manifest $fields $fields
     if ($manifest.SchemaVersion -ne 2 -or $manifest.Version -notmatch '^16\.0\.\d+\.\d+$') {
@@ -2623,12 +2652,24 @@ function Test-OfficeDeploymentMedia {
       Fingerprint = Get-PSFOfficeFingerprint $manifest
       ReasonCode  = $null
       Error       = $null
+      Diagnostic  = $null
     }
   }
   catch {
     $reason = $_.Exception.Data['OfficeReason']
+    $message = $_.Exception.Message
+    $diagnostic = $_.Exception.Data['OfficeDiagnostic']
     if (-not $reason) {
       $reason = 'InvalidMedia'
+      $message = "Office media validation failed at $stage for '$SourcePath'."
+    }
+    if ($reason -eq 'InvalidContract') { $message = "Office media contract is invalid at '$SourcePath'." }
+    if (-not $diagnostic) {
+      $diagnostic = [PSCustomObject]@{
+        Stage = $stage; ObjectKind = 'MediaPackage'; Path = $SourcePath
+        ExceptionType = $_.Exception.GetType().FullName
+        Function = 'Test-OfficeDeploymentMedia'; ScriptPath = $PSCommandPath; Line = $_.InvocationInfo.ScriptLineNumber
+      }
     }
     [PSCustomObject]@{
       Valid       = $false
@@ -2636,7 +2677,8 @@ function Test-OfficeDeploymentMedia {
       Manifest    = $null
       Fingerprint = $null
       ReasonCode  = $reason
-      Error       = $_.Exception.Message
+      Error       = $message
+      Diagnostic  = $diagnostic
     }
   }
 }
@@ -3091,6 +3133,20 @@ function Enter-PSFOfficeLock {
   }
 }
 
+function Get-PSFOfficeExecutionContext {
+  [CmdletBinding()]
+  param ()
+
+  $module = $ExecutionContext.SessionState.Module
+  [PSCustomObject]@{
+    ModuleVersion     = if ($module -and $module.Name -eq 'PSFoundation') { [string]$module.Version } else { $null }
+    ModulePath        = if ($module -and $module.Name -eq 'PSFoundation') { $module.Path } else { $PSCommandPath }
+    PowerShellVersion = [string]$PSVersionTable.PSVersion
+    PowerShellEdition = [string]$PSVersionTable.PSEdition
+    ProcessBitness    = [IntPtr]::Size * 8
+  }
+}
+
 function New-PSFOfficeResult {
   [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'In-memory result factory.')]
   [CmdletBinding()]
@@ -3125,6 +3181,8 @@ function New-PSFOfficeResult {
     Residue            = @()
     CleanupErrors      = @()
     Error              = $null
+    Diagnostic         = $null
+    Execution          = Get-PSFOfficeExecutionContext
     Plan               = $Plan
   }
   New-OperationResult -Target $Plan.MachineId -Source Office -Action $Plan.Action -Status $Status -RunId ([guid]::NewGuid().ToString('N')) -Before $Plan.Before -Property $metadata
@@ -3157,10 +3215,14 @@ function Get-OfficeDeploymentRecovery {
   )
 
   $path = Join-Path $LogRoot ($RunId + '.json')
-  Assert-PSFOfficeProtectedPath $LogRoot
-  Assert-PSFOfficeProtectedPath $path
+  Assert-PSFOfficeProtectedPath $LogRoot -ObjectKind RecoveryDirectory
+  Assert-PSFOfficeProtectedPath $path -ObjectKind RecoveryJournal
+  $stage = 'Read'
   try {
-    $record = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8 -ErrorAction Stop
+    $stage = 'Json'
+    $record = $json | ConvertFrom-Json -ErrorAction Stop
+    $stage = 'Schema'
     $fields = @(
       'SchemaVersion',
       'RunId',
@@ -3178,9 +3240,14 @@ function Get-OfficeDeploymentRecovery {
       'Result'
     )
     Assert-PSFOfficeField $record $fields $fields
-    if ($record.SchemaVersion -notin @(1, 2) -or $record.RunId -ne $RunId -or $record.MachineId -ne (Get-PSFOfficeMachineId)) {
+    if ($record.SchemaVersion -notin @(1, 2)) {
+      Stop-PSFOfficeOperation InvalidRecoveryRecord 'Recovery schema is unsupported.'
+    }
+    $stage = 'Identity'
+    if ($record.RunId -ne $RunId -or $record.MachineId -ne (Get-PSFOfficeMachineId)) {
       Stop-PSFOfficeOperation InvalidRecoveryRecord 'Recovery record schema, run, or machine does not match.'
     }
+    $stage = 'Schema'
     $planFields = @(
       'SchemaVersion',
       'Action',
@@ -3209,19 +3276,27 @@ function Get-OfficeDeploymentRecovery {
       Assert-PSFOfficeField $record.Plan.PilotResources $resourceFields $resourceFields
     }
     Assert-PSFOfficeField $record.Plan $planFields $planFields
+    $stage = 'Context'
     if ($record.Plan.SchemaVersion -ne $record.SchemaVersion -or $record.Plan.Action -ne $record.Action -or
       $record.Plan.MachineId -ne $record.MachineId -or $record.Plan.RemoveMsi -isnot [bool] -or
       $record.PhaseCompleted -isnot [bool] -or $record.RebootRequired -isnot [bool] -or
-      $record.MediaFingerprint -ne $record.Plan.MediaFingerprint -or
-      (Get-PSFOfficeFingerprint $record.Plan.Before) -ne $record.Plan.InventoryFingerprint) {
+      $record.MediaFingerprint -ne $record.Plan.MediaFingerprint) {
       Stop-PSFOfficeOperation InvalidRecoveryRecord 'Recovery operation context is inconsistent.'
     }
+    $stage = 'InventoryFingerprint'
+    if ((Get-PSFOfficeFingerprint $record.Plan.Before) -ne $record.Plan.InventoryFingerprint) {
+      Stop-PSFOfficeOperation InvalidRecoveryRecord 'Recorded inventory fingerprint differs.'
+    }
+    $stage = 'Authority'
     if ($record.Action -eq 'Install' -and ($record.Plan.RemoveMsi -or $record.Plan.RemoveProductId.Count)) {
       Stop-PSFOfficeOperation InvalidAuthority 'Install recovery cannot contain removal authority.'
     }
+    $stage = 'Settings'
     Assert-PSFOfficeSetting $record.Action $record.Plan.Settings
+    $stage = 'Configuration'
     if ($record.Plan.Configuration) {
       $target = ConvertTo-PSFOfficeConfiguration $record.Plan.Configuration
+      $stage = 'ConfigurationFingerprint'
       if ((Get-PSFOfficeFingerprint $target) -ne $record.ConfigurationFingerprint) {
         Stop-PSFOfficeOperation InvalidRecoveryRecord 'Recorded target fingerprint differs.'
       }
@@ -3234,10 +3309,18 @@ function Get-OfficeDeploymentRecovery {
     }
   }
   catch {
-    if ($_.Exception.Data['OfficeReason']) {
-      throw
+    $reason = $_.Exception.Data['OfficeReason']
+    $category = 'Validation'
+    if (-not $reason) {
+      $reason = 'InvalidRecoveryRecord'
+      $category = if ($stage -in @('Read', 'Json')) { $stage } else { 'InternalValidation' }
     }
-    Stop-PSFOfficeOperation InvalidRecoveryRecord 'Recovery record is missing, corrupt, or incompatible; no operation was resumed.'
+    $diagnostic = [PSCustomObject]@{
+      Stage = $stage; Category = $category; ObjectKind = 'RecoveryJournal'; Path = $path
+      ExceptionType = $_.Exception.GetType().FullName
+      Function = 'Get-OfficeDeploymentRecovery'; ScriptPath = $PSCommandPath; Line = $_.InvocationInfo.ScriptLineNumber
+    }
+    Stop-PSFOfficeOperation $reason "Recovery journal validation failed at $stage for '$path' ($category); no operation was resumed." $diagnostic
   }
 }
 
@@ -3495,6 +3578,7 @@ function Invoke-PSFOfficeWorkflow {
       $result.ReasonCode = 'PreflightFailed'
     }
     $result.Error = $_.Exception.Message
+    $result.Diagnostic = $_.Exception.Data['OfficeDiagnostic']
     $result.WrapperExitCode = 1
     return $result
   }
@@ -3633,6 +3717,7 @@ function Invoke-PSFOfficeWorkflow {
       $result.ReasonCode = 'OperationFailed'
     }
     $result.Error = $_.Exception.Message
+    $result.Diagnostic = $_.Exception.Data['OfficeDiagnostic']
     if ($_.Exception.Data.Contains('OfficeExitCode')) {
       $result.ExitCode = $_.Exception.Data['OfficeExitCode']
       $result.NativeResults += [PSCustomObject]@{
@@ -3780,6 +3865,7 @@ function Invoke-PSFOfficeRecovery {
   if (-not ($beforeLaunch -or $afterRemoval)) {
     $result.Status = 'Blocked'
     $result.ReasonCode = 'UnsupportedRecoveryState'
+    $result.Error = 'The recorded checkpoint and current inventory do not prove a safe continuation. Review the journal and fresh inventory; do not replay an uncertain installer.'
     $result.RecoveryRequired = $true
     $result.WrapperExitCode = 1
     return $result

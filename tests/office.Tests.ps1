@@ -92,6 +92,61 @@ Describe 'Imported Office native machine identity' {
   }
 }
 
+Describe 'Imported Office safe diagnostics' {
+  BeforeAll { Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force }
+
+  It 'identifies the <Stage> ACL failure without changing its reason code' -ForEach @(
+    @{ Stage = 'Owner'; Sddl = 'O:S-1-1-0G:S-1-5-32-544D:P(A;;FA;;;S-1-5-32-544)' }
+    @{ Stage = 'WriteGrant'; Sddl = 'O:S-1-5-32-544G:S-1-5-32-544D:P(A;;FA;;;S-1-1-0)' }
+  ) {
+    InModuleScope PSFoundation -Parameters @{ Stage = $Stage; Sddl = $Sddl } {
+      param ($Stage, $Sddl)
+      $script:diagnosticAcl = New-Object Security.AccessControl.DirectorySecurity
+      $diagnosticAcl.SetSecurityDescriptorSddlForm($Sddl)
+      Mock Get-Acl { $script:diagnosticAcl }
+      $failure = $null
+      try { Assert-PSFOfficeProtectedPath C:\Synthetic\journal.json -ObjectKind RecoveryJournal } catch { $failure = $_ }
+      $failure.Exception.Data['OfficeReason'] | Should -Be UntrustedMedia
+      $detail = $failure.Exception.Data['OfficeDiagnostic']
+      $detail.Stage | Should -Be $Stage
+      $detail.ObjectKind | Should -Be RecoveryJournal
+      $detail.Path | Should -Be 'C:\Synthetic\journal.json'
+      $detail.Sid | Should -Be 'S-1-1-0'
+      if ($Stage -eq 'WriteGrant') {
+        $detail.Rights | Should -Be FullControl
+        $detail.IsInherited | Should -BeFalse
+        $detail.InheritanceFlags | Should -Be None
+      }
+    }
+  }
+
+  It 'does not expose malformed JSON through recovery or media errors' {
+    Mock Assert-PSFOfficeProtectedPath { } -ModuleName PSFoundation
+    Mock Get-Content { '{"SENSITIVE-JOURNAL-CONTENT":' } -ModuleName PSFoundation
+    Mock Test-Path { $true } -ModuleName PSFoundation
+    $failure = $null
+    try { PSFoundation\Get-OfficeDeploymentRecovery -RunId aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa -LogRoot C:\Synthetic } catch { $failure = $_ }
+    $failure.Exception.Data['OfficeReason'] | Should -Be InvalidRecoveryRecord
+    $failure.Exception.Data['OfficeDiagnostic'].Stage | Should -Be Json
+    $failure.Exception.Message | Should -Not -Match SENSITIVE
+    $media = PSFoundation\Test-OfficeDeploymentMedia -SourcePath C:\Synthetic
+    $media.Valid | Should -BeFalse
+    $media.Diagnostic.Stage | Should -Be Json
+    ($media | ConvertTo-Json -Depth 8) | Should -Not -Match SENSITIVE
+  }
+
+  It 'records the executing module and runtime rather than preparation metadata' {
+    InModuleScope PSFoundation {
+      $execution = Get-PSFOfficeExecutionContext
+      $execution.ModuleVersion | Should -Be ([string](Get-Module PSFoundation).Version)
+      $execution.ModulePath | Should -Be (Get-Module PSFoundation).Path
+      $execution.PowerShellVersion | Should -Be ([string]$PSVersionTable.PSVersion)
+      $execution.PowerShellEdition | Should -Be $PSVersionTable.PSEdition
+      $execution.ProcessBitness | Should -Be ([IntPtr]::Size * 8)
+    }
+  }
+}
+
 Describe 'Imported Office nullable collections' {
   BeforeAll {
     Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
@@ -2066,12 +2121,26 @@ Describe 'Office pre-fix migration journal continuation' {
     (Get-FileHash -LiteralPath $originalPath).Hash | Should -Be $originalHash
   }
 
-  It 'reads empty historical settings and previews through the imported strict-mode module' {
+  It 'evaluates the historical <Phase>/<Installed> checkpoint through the imported module' -ForEach @(
+    @{ Phase = 'StageMedia'; Installed = $false; Expected = 'Preview' }
+    @{ Phase = 'CloseApplications'; Installed = $false; Expected = 'Preview' }
+    @{ Phase = 'Remove'; Installed = $false; Expected = 'Preview' }
+    @{ Phase = 'Migrate'; Installed = $false; Expected = 'Blocked' }
+    @{ Phase = 'Verify'; Installed = $false; Expected = 'Blocked' }
+    @{ Phase = 'Migrate'; Installed = $true; Expected = 'Completed' }
+    @{ Phase = 'Verify'; Installed = $true; Expected = 'Completed' }
+  ) {
+    $originalRecord.Phase = $Phase
+    $originalRecord.PhaseCompleted = $Phase -ne 'Migrate'
+    Write-PSFOfficeJson -Path $originalPath -Value $originalRecord
+    $script:originalHash = (Get-FileHash -LiteralPath $originalPath).Hash
+    if ($Installed) { $script:recoveryRecords = $script:installedRecords }
     Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
     Mock Get-PSFOfficeMachineId { 'synthetic-machine' } -ModuleName PSFoundation
     Mock Assert-PSFOfficeProtectedPath { } -ModuleName PSFoundation
     Mock Assert-PSFOfficeHost { } -ModuleName PSFoundation
-    Mock Get-PSFOfficeRegistrySnapshot { $script:staleRecords } -ModuleName PSFoundation
+    Mock Get-PSFOfficeRegistrySnapshot { $script:recoveryRecords } -ModuleName PSFoundation
+    Mock Get-OfficeActivationStatus { [PSCustomObject]@{ Status = 'Licensed' } } -ModuleName PSFoundation
     Mock Get-PSFOfficePathAttribute {
       if ($LiteralPath -like '*.exe') { throw [IO.FileNotFoundException]::new('Synthetic removed executable') }
       [IO.FileAttributes]::Directory
@@ -2090,13 +2159,51 @@ Describe 'Office pre-fix migration journal continuation' {
     @($loaded.Record.Plan.Settings.PSObject.Properties | ForEach-Object { $_.Name }).Count | Should -Be 0
     $loaded.Record.Plan.InventoryFingerprint | Should -Be $originalRecord.Plan.InventoryFingerprint
     $preview = PSFoundation\Resume-OfficeMigration -Recovery $loaded -OdtPath C:\ODT\setup.exe -DryRun
-    $preview.Status | Should -Be Preview
+    $preview.Status | Should -Be $Expected
     $preview.Configuration.Version | Should -Be $recoveryTarget.Version
-    $preview.Plan.RemoveProductId.Count | Should -Be 0
-    $preview.Plan.RemoveMsi | Should -BeFalse
+    $preview.Execution.ModuleVersion | Should -Be ([string](Get-Module PSFoundation).Version)
+    if ($Expected -eq 'Preview') {
+      $preview.Plan.RemoveProductId.Count | Should -Be 0
+      $preview.Plan.RemoveMsi | Should -BeFalse
+    }
+    elseif ($Expected -eq 'Blocked') {
+      $preview.ReasonCode | Should -Be UnsupportedRecoveryState
+      $preview.Error | Should -Match 'safe continuation'
+    }
+    else { $preview.ReasonCode | Should -Be AlreadyCompliant }
     Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
     Should -Invoke Write-PSFOfficeJson -ModuleName PSFoundation -Times 0
     (Get-FileHash -LiteralPath $originalPath).Hash | Should -Be $originalHash
+  }
+
+  It 'reports <Stage> journal failures without exposing untrusted content' -ForEach @(
+    @{ Stage = 'Read' }, @{ Stage = 'Schema' }, @{ Stage = 'Identity' }, @{ Stage = 'Context' },
+    @{ Stage = 'InventoryFingerprint' }, @{ Stage = 'ConfigurationFingerprint' }, @{ Stage = 'Settings' }
+  ) {
+    Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force
+    Mock Assert-PSFOfficeProtectedPath { } -ModuleName PSFoundation
+    Mock Get-PSFOfficeMachineId { 'synthetic-machine' } -ModuleName PSFoundation
+    switch ($Stage) {
+      Read { Mock Get-Content { throw 'SENSITIVE read failure' } -ModuleName PSFoundation }
+      Schema { $originalRecord | Add-Member NoteProperty 'SENSITIVE-FIELD' 'SENSITIVE-VALUE' }
+      Identity { $originalRecord.MachineId = 'SENSITIVE-OTHER-MACHINE' }
+      Context { $originalRecord.Plan.MediaFingerprint = 'SENSITIVE-OTHER-MEDIA' }
+      InventoryFingerprint { $originalRecord.Plan.InventoryFingerprint = 'SENSITIVE-HASH' }
+      ConfigurationFingerprint { $originalRecord.ConfigurationFingerprint = 'SENSITIVE-HASH' }
+      Settings { Mock Assert-PSFOfficeSetting { throw 'SENSITIVE internal exception' } -ModuleName PSFoundation }
+    }
+    Write-PSFOfficeJson -Path $originalPath -Value $originalRecord
+    $failure = $null
+    try { PSFoundation\Get-OfficeDeploymentRecovery -RunId $originalRecord.RunId -LogRoot $recoveryRoot } catch { $failure = $_ }
+    $detail = $failure.Exception.Data['OfficeDiagnostic']
+    $detail.Stage | Should -Be $Stage
+    $detail.Path | Should -Be $originalPath
+    $detail.ExceptionType | Should -Not -BeNullOrEmpty
+    $detail.Function | Should -Be Get-OfficeDeploymentRecovery
+    $detail.Line | Should -BeGreaterThan 0
+    if ($Stage -eq 'Settings') { $detail.Category | Should -Be InternalValidation }
+    $failure.Exception.Message | Should -Not -Match SENSITIVE
+    ($detail | ConvertTo-Json) | Should -Not -Match SENSITIVE
   }
 
   It 'installs once without repeating removal and retains both journals' {
@@ -2110,6 +2217,7 @@ Describe 'Office pre-fix migration journal continuation' {
       $newRecord = (Get-OfficeDeploymentRecovery -RunId $result.RunId -LogRoot $recoveryRoot).Record
       $newRecord.Plan.RemoveProductId.Count | Should -Be 0
       $newRecord.Plan.RemoveMsi | Should -BeFalse
+      $newRecord.Result.Execution.PowerShellVersion | Should -Be ([string]$PSVersionTable.PSVersion)
       $newRecord.Plan.Configuration.ExcludeApp | Should -Be $recoveryTarget.ExcludeApp
       $newRecord.Plan.Configuration.Language | Should -Be @('de-de')
       (Get-Content -LiteralPath $result.RecoveryPath -Raw) | Should -Not -Match 'AAAAA'
