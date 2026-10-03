@@ -1,3 +1,30 @@
+## [1.8.6](https://github.com/adnoctem/PSFoundation/compare/v1.8.5...v1.8.6) (2026-10-03)
+
+### Bug Fixes
+
+- **docs:** reconcile Office acceptance and remaining validation
+  ([8a8ef65](https://github.com/adnoctem/PSFoundation/commit/8a8ef65508f7806ca0a41e02f80f5eb859bced38))
+- **src:** accept Office update plans without an optional channel
+  ([b566843](https://github.com/adnoctem/PSFoundation/commit/b566843935d474ea5c468dcafeee055ed8991025))
+- **src:** allow compliant migration repeats after source removal
+  ([0697ae0](https://github.com/adnoctem/PSFoundation/commit/0697ae033f62c1e4d1e00aed8764ea2236ccf885))
+- **src:** expose safe Office recovery diagnostics and runtime provenance
+  ([8d9c065](https://github.com/adnoctem/PSFoundation/commit/8d9c065d97b096dbba72841f430b9711ece9dabf))
+- **src:** preserve agreed locales across installed Office products
+  ([dbc4e7c](https://github.com/adnoctem/PSFoundation/commit/dbc4e7cccf8375a9b2728ee7e8f8ec54ca965576))
+- **src:** preserve Office media diagnostics across failure paths
+  ([9133b39](https://github.com/adnoctem/PSFoundation/commit/9133b39a827bd82d1324c525725a4561164806af))
+- **src:** preserve registry reports when native commands fail
+  ([afc05c2](https://github.com/adnoctem/PSFoundation/commit/afc05c2fa1f8b90a1e2b935fc193bb0cc48d985c))
+- **src:** preserve unknown Office exclusions and normalize observed sets
+  ([f67d2ad](https://github.com/adnoctem/PSFoundation/commit/f67d2ad41cd02ffe758afb93f7856a191e9e219d))
+- **src:** read Office machine identity from the native registry view
+  ([722f383](https://github.com/adnoctem/PSFoundation/commit/722f38314224f8956000ead5f5a39dceaf565fc2))
+- **src:** verify selected Office removal under strict mode
+  ([051a714](https://github.com/adnoctem/PSFoundation/commit/051a714a54bf15a18631e8fd5f1419d0adfdbd02))
+- **tools:** format generated changelogs before release commits
+  ([3183e30](https://github.com/adnoctem/PSFoundation/commit/3183e30b7c81ce209e6d4b9e7cf5532d1c0d410d))
+
 ## [1.8.5](https://github.com/adnoctem/PSFoundation/compare/v1.8.4...v1.8.5) (2026-10-02)
 
 ### Bug Fixes
