@@ -552,6 +552,22 @@ function Stop-PSFOfficeOperation {
   throw $exception
 }
 
+function Get-PSFOfficeMediaDiagnostic {
+  [CmdletBinding()]
+  param (
+    [object]
+    $Assessment
+  )
+
+  # A valid assessment with a changed fingerprint is not a validation failure.
+  # Older/minimal assessments need not contain the optional diagnostic field.
+  if ($null -ne $Assessment -and -not $Assessment.Valid) {
+    if ($Assessment -is [Collections.IDictionary]) { return $Assessment['Diagnostic'] }
+    $property = $Assessment.PSObject.Properties['Diagnostic']
+    if ($property) { return $property.Value }
+  }
+}
+
 function Assert-PSFOfficeField {
   [CmdletBinding()]
   param (
@@ -2042,6 +2058,7 @@ function Get-OfficeDeploymentPlan {
     Blockers             = @($blockers | Sort-Object -Unique)
     Warnings             = @($warnings)
     LanguageTransition   = $transition
+    Media                = $media
     MediaFingerprint     = if ($media -and $media.Valid) { $media.Fingerprint } else { $null }
   }
   $plan
@@ -2076,7 +2093,7 @@ function Confirm-PSFOfficePlan {
     'LanguageTransition',
     'MediaFingerprint'
   )
-  Assert-PSFOfficeField $Plan $fields $fields
+  Assert-PSFOfficeField $Plan ($fields + @('Media')) $fields
   if ($Plan.SchemaVersion -ne 1 -or $Plan.Action -ne $Action -or $Plan.RemoveMsi -isnot [bool]) {
     Stop-PSFOfficeOperation InvalidAuthority 'Plan schema, action, or removal authority does not match this command.'
   }
@@ -2096,7 +2113,7 @@ function Confirm-PSFOfficePlan {
   }
   $fresh = Get-OfficeDeploymentPlan @parameters
   if ($Plan.MediaFingerprint -ne $fresh.MediaFingerprint) {
-    Stop-PSFOfficeOperation StaleMedia 'Prepared media changed; create a new plan.'
+    Stop-PSFOfficeOperation StaleMedia 'Prepared media changed; create a new plan.' (Get-PSFOfficeMediaDiagnostic $fresh.Media)
   }
   $fresh
 }
@@ -2980,7 +2997,7 @@ function Save-OfficeDeploymentMedia {
   if (Test-Path -LiteralPath $SourcePath) {
     $existing = Test-OfficeDeploymentMedia -SourcePath $SourcePath -Configuration $target
     if (-not $existing.Valid) {
-      Stop-PSFOfficeOperation InvalidMedia 'Existing package is incomplete or incompatible; use a new destination.'
+      Stop-PSFOfficeOperation InvalidMedia 'Existing package is incomplete or incompatible; use a new destination.' (Get-PSFOfficeMediaDiagnostic $existing)
     }
     return $existing
   }
@@ -3026,7 +3043,7 @@ function Save-OfficeDeploymentMedia {
     Write-PSFOfficeJson -Path $manifestPath -Value $manifest
     $assessment = Test-OfficeDeploymentMedia -SourcePath $work -Configuration $target
     if (-not $assessment.Valid) {
-      Stop-PSFOfficeOperation $assessment.ReasonCode $assessment.Error
+      Stop-PSFOfficeOperation $assessment.ReasonCode $assessment.Error (Get-PSFOfficeMediaDiagnostic $assessment)
     }
     Remove-Item -LiteralPath $setup -Force -ErrorAction Stop
     # Same-parent directory rename publishes a fully verified package, never a partial download.
@@ -3299,7 +3316,7 @@ function Get-OfficeDeploymentRecovery {
       $resourceFields = @('UiLanguages', 'PrimaryLanguage', 'ProofingLanguages', 'Provisioning', 'Verification')
       Assert-PSFOfficeField $record.Plan.PilotResources $resourceFields $resourceFields
     }
-    Assert-PSFOfficeField $record.Plan $planFields $planFields
+    Assert-PSFOfficeField $record.Plan ($planFields + @('Media')) $planFields
     $stage = 'Context'
     if ($record.Plan.SchemaVersion -ne $record.SchemaVersion -or $record.Plan.Action -ne $record.Action -or
       $record.Plan.MachineId -ne $record.MachineId -or $record.Plan.RemoveMsi -isnot [bool] -or
@@ -3670,7 +3687,7 @@ function Invoke-PSFOfficeWorkflow {
     if ($fresh.SourcePath) {
       $media = Test-OfficeDeploymentMedia -SourcePath $fresh.SourcePath -Configuration $fresh.Configuration
       if (-not $media.Valid -or $media.Fingerprint -ne $fresh.MediaFingerprint) {
-        Stop-PSFOfficeOperation StaleMedia 'Source media changed.'
+        Stop-PSFOfficeOperation StaleMedia 'Source media changed.' (Get-PSFOfficeMediaDiagnostic $media)
       }
       $bytes = ($media.Manifest.Files | Measure-Object Length -Sum).Sum
       $drive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($work))
@@ -3683,7 +3700,7 @@ function Invoke-PSFOfficeWorkflow {
       Copy-Item -LiteralPath (Join-Path $fresh.SourcePath 'psfoundation-office-media.json') -Destination $context.MediaPath -ErrorAction Stop
       $staged = Test-OfficeDeploymentMedia -SourcePath $context.MediaPath -Configuration $fresh.Configuration
       if (-not $staged.Valid -or $staged.Fingerprint -ne $fresh.MediaFingerprint) {
-        Stop-PSFOfficeOperation MediaIntegrityFailed 'Staged media verification failed.'
+        Stop-PSFOfficeOperation MediaIntegrityFailed 'Staged media verification failed.' (Get-PSFOfficeMediaDiagnostic $staged)
       }
     }
     Set-PSFOfficeCheckpoint $context StageMedia $true
@@ -3861,7 +3878,7 @@ function Invoke-PSFOfficeRecovery {
   }
   $media = Test-OfficeDeploymentMedia -SourcePath $record.Plan.SourcePath -Configuration $target
   if (-not $media.Valid -or $media.Fingerprint -ne $record.MediaFingerprint) {
-    Stop-PSFOfficeOperation StaleMedia 'Recovery media no longer matches the recorded deployment.'
+    Stop-PSFOfficeOperation StaleMedia 'Recovery media no longer matches the recorded deployment.' (Get-PSFOfficeMediaDiagnostic $media)
   }
   if ($verification.Compliant) {
     $result.Status = 'Completed'

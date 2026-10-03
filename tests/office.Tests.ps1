@@ -147,6 +147,157 @@ Describe 'Imported Office safe diagnostics' {
   }
 }
 
+Describe 'Imported Office media diagnostic propagation' {
+  BeforeAll { Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force }
+
+  BeforeEach {
+    $ErrorActionPreference = 'Stop'
+    $script:diagnosticTarget = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Version 16.0.10417.20211
+    $script:diagnosticInventory = New-TestOfficeInventory
+    $script:diagnosticInventory | Add-Member NoteProperty VerificationLimitations @()
+    $script:diagnosticInventory | Add-Member NoteProperty RelatedComponents @()
+    $script:diagnosticSource = Join-Path $TestDrive ('media-' + [guid]::NewGuid().ToString('N'))
+    $script:diagnosticLogRoot = Join-Path $TestDrive ('logs-' + [guid]::NewGuid().ToString('N'))
+    $script:diagnosticSetup = Join-Path $TestDrive 'synthetic-setup.exe'
+    $script:diagnosticBranch = ''
+    $script:mediaStageStarted = $false
+    $script:mediaJournal = $null
+    $script:mediaLog = $null
+    $script:mediaDetail = [PSCustomObject]@{ Stage = 'WriteGrant'; ObjectKind = 'MediaManifest'; Path = 'C:\Synthetic\media.json'; Sid = 'S-1-1-0'; Rights = 'FullControl'; IsInherited = $false }
+    $script:mediaFailure = [PSCustomObject]@{ Valid = $false; ReasonCode = 'UntrustedMedia'; Error = 'Synthetic safe media rejection'; Diagnostic = $script:mediaDetail; RawContent = 'SENSITIVE-ASSESSMENT-CONTENT' }
+    Mock Get-OfficeInventory { $script:diagnosticInventory } -ModuleName PSFoundation
+    Mock Assert-PSFOfficeProtectedPath { } -ModuleName PSFoundation
+    Mock Assert-PSFOfficeHost { } -ModuleName PSFoundation
+    Mock Test-OfficeDeploymentTool { [PSCustomObject]@{ Valid = $true; Version = '16.0.20326.20112' } } -ModuleName PSFoundation
+    Mock Get-PSFOfficeActivity { [PSCustomObject]@{ Busy = $false; Apps = @() } } -ModuleName PSFoundation
+    Mock Test-PendingReboot { [PSCustomObject]@{ PendingReboot = $false } } -ModuleName PSFoundation
+    Mock Test-OfficeDeploymentMedia {
+      $fail = $script:diagnosticBranch -in @('Existing', 'Downloaded', 'Recovery', 'Plan')
+      if ($script:mediaStageStarted) {
+        $fail = ($script:diagnosticBranch -eq 'Source' -and $SourcePath -eq $script:diagnosticSource) -or
+        ($script:diagnosticBranch -eq 'Staged' -and $SourcePath -ne $script:diagnosticSource)
+      }
+      if ($fail) { return $script:mediaFailure }
+      [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media'; Manifest = [PSCustomObject]@{ Version = '16.0.10417.20211'; Files = @([PSCustomObject]@{ Length = 1 }) } }
+    } -ModuleName PSFoundation
+    Mock New-PSFOfficeProtectedDirectory { $null = [IO.Directory]::CreateDirectory($Path) } -ModuleName PSFoundation
+    Mock Copy-Item { } -ModuleName PSFoundation
+    Mock Write-PSFOfficeJson {
+      if ($Value.PSObject.Properties['Phase']) {
+        $script:mediaStageStarted = $true
+        $script:mediaJournal = $Value | ConvertTo-Json -Depth 30
+      }
+    } -ModuleName PSFoundation
+    Mock Write-OperationResultLog { $script:mediaLog = $Results | ConvertTo-Json -Depth 30 } -ModuleName PSFoundation
+    Mock Enter-PSFOfficeLock {
+      $lock = [PSCustomObject]@{}
+      $lock | Add-Member ScriptMethod ReleaseMutex { }
+      $lock | Add-Member ScriptMethod Dispose { }
+      $lock
+    } -ModuleName PSFoundation
+    Mock Invoke-PSFOfficeConfiguration {
+      if ($Mode -ne '/download') { throw 'No installation or removal is permitted' }
+      $data = Join-Path $Directory 'Office\Data\16.0.10417.20211'
+      $null = [IO.Directory]::CreateDirectory($data)
+      [IO.File]::WriteAllText((Join-Path $data 'synthetic.dat'), 'Synthetic payload')
+      [PSCustomObject]@{ ExitCode = 0 }
+    } -ModuleName PSFoundation
+    $script:diagnosticPlan = PSFoundation\Get-OfficeDeploymentPlan -Action Install -Configuration $script:diagnosticTarget -SourcePath $script:diagnosticSource
+    $script:diagnosticRecord = [PSCustomObject]@{ SchemaVersion = 1; Action = 'Install'; Plan = $script:diagnosticPlan; MediaFingerprint = 'synthetic-media' }
+    $script:recordBefore = $script:diagnosticRecord | ConvertTo-Json -Depth 30
+    Mock Get-OfficeDeploymentRecovery {
+      [PSCustomObject]@{ Record = $script:diagnosticRecord; Path = 'C:\Synthetic\original.json' }
+    } -ModuleName PSFoundation
+  }
+
+  It 'revalidates a plan with <Metadata> media metadata' -ForEach @(@{ Metadata = 'missing' }, @{ Metadata = 'untrusted' }) {
+    if ($Metadata -eq 'missing') { $script:diagnosticPlan.PSObject.Properties.Remove('Media') }
+    else { $script:diagnosticPlan.Media = [PSCustomObject]@{ Valid = $true; Diagnostic = 'SENSITIVE-CALLER-METADATA' } }
+    $script:diagnosticBranch = 'Source'
+    $result = PSFoundation\Install-Office -Plan $script:diagnosticPlan -OdtPath $script:diagnosticSetup -LogRoot $script:diagnosticLogRoot -Confirm:$false
+    $result.Status | Should -Be Failed
+    $result.ReasonCode | Should -Be StaleMedia
+    ($result.Diagnostic | ConvertTo-Json) | Should -Be ($script:mediaDetail | ConvertTo-Json)
+    ($result | ConvertTo-Json -Depth 30) | Should -Not -Match SENSITIVE
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
+  }
+
+  It 'preserves the <Kind> diagnostic at the <Branch> boundary' -ForEach @(
+    foreach ($branch in @('Existing', 'Downloaded', 'Plan', 'Source', 'Staged', 'Recovery')) {
+      foreach ($kind in @('Present', 'Missing', 'Null')) { @{ Branch = $branch; Kind = $kind } }
+    }
+    foreach ($branch in @('Plan', 'Source', 'Staged', 'Recovery')) { @{ Branch = $branch; Kind = 'Fingerprint' } }
+  ) {
+    $script:diagnosticBranch = $Branch
+    if ($Kind -eq 'Missing') { $script:mediaFailure.PSObject.Properties.Remove('Diagnostic') }
+    elseif ($Kind -eq 'Null') { $script:mediaFailure.Diagnostic = $null }
+    elseif ($Kind -eq 'Fingerprint') {
+      # Even an incidental old diagnostic must not mislabel a valid assessment.
+      $script:mediaFailure.Valid = $true
+      $script:mediaFailure | Add-Member NoteProperty Fingerprint 'different-media'
+    }
+    $failure = $null
+    $result = $null
+    $expectedReason = 'StaleMedia'
+    try {
+      if ($Branch -in @('Existing', 'Downloaded')) {
+        if ($Branch -eq 'Existing') { $null = [IO.Directory]::CreateDirectory($script:diagnosticSource); $expectedReason = 'InvalidMedia' }
+        else { $expectedReason = 'UntrustedMedia' }
+        $null = PSFoundation\Save-OfficeDeploymentMedia -Configuration $script:diagnosticTarget -SourcePath $script:diagnosticSource -OdtPath $script:diagnosticSetup -Confirm:$false
+      }
+      elseif ($Branch -eq 'Recovery') {
+        $descriptor = [PSCustomObject]@{ RunId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; LogRoot = $script:diagnosticLogRoot }
+        $null = PSFoundation\Resume-OfficeInstallation -Recovery $descriptor -OdtPath $script:diagnosticSetup -Confirm:$false
+      }
+      else {
+        if ($Branch -eq 'Staged') { $expectedReason = 'MediaIntegrityFailed' }
+        $result = PSFoundation\Install-Office -Plan $script:diagnosticPlan -OdtPath $script:diagnosticSetup -LogRoot $script:diagnosticLogRoot -Confirm:$false
+      }
+    }
+    catch { $failure = $_ }
+    if ($Branch -in @('Source', 'Staged')) {
+      $failure | Should -BeNullOrEmpty
+      $result.Status | Should -Be Failed
+      $result.ReasonCode | Should -Be $expectedReason
+      $result.WrapperExitCode | Should -Be 1
+      $result.Changed | Should -BeFalse
+      $result.ChangeKnown | Should -BeTrue
+      $result.NativeResults.Count | Should -Be 0
+      $detail = $result.Diagnostic
+      ($script:mediaJournal | ConvertFrom-Json).Result.Diagnostic | ConvertTo-Json | Should -Be ($detail | ConvertTo-Json)
+      ($script:mediaLog | ConvertFrom-Json).Diagnostic | ConvertTo-Json | Should -Be ($detail | ConvertTo-Json)
+      ($result | ConvertTo-Json -Depth 30) | Should -Not -Match SENSITIVE
+      $script:mediaJournal | Should -Not -Match SENSITIVE
+      $script:mediaLog | Should -Not -Match SENSITIVE
+    }
+    else {
+      $failure | Should -Not -BeNullOrEmpty
+      $failure.Exception.Data['OfficeReason'] | Should -Be $expectedReason
+      $detail = $failure.Exception.Data['OfficeDiagnostic']
+      $failure.Exception.Message | Should -Not -Match SENSITIVE
+    }
+    if ($Kind -eq 'Present') { ($detail | ConvertTo-Json) | Should -Be ($script:mediaDetail | ConvertTo-Json) }
+    else { $detail | Should -BeNullOrEmpty }
+    $nativeCount = if ($Branch -eq 'Downloaded') { 1 } else { 0 }
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times $nativeCount -Exactly
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0 -ParameterFilter { $Mode -ne '/download' }
+    if ($Branch -eq 'Downloaded') {
+      Test-Path -LiteralPath $script:diagnosticSource | Should -BeFalse
+      @(Get-ChildItem $TestDrive -Directory -Filter 'PSFOfficePrepare-*').Count | Should -Be 0
+    }
+    if ($Branch -in @('Existing', 'Recovery', 'Plan')) {
+      Should -Invoke New-PSFOfficeProtectedDirectory -ModuleName PSFoundation -Times 0
+      Should -Invoke Write-PSFOfficeJson -ModuleName PSFoundation -Times 0
+    }
+    ($script:diagnosticRecord | ConvertTo-Json -Depth 30) | Should -Be $script:recordBefore
+    if ($Branch -eq 'Plan' -and $Kind -eq 'Present') {
+      $blocked = PSFoundation\Get-OfficeDeploymentPlan -Action Install -Configuration $script:diagnosticTarget -SourcePath $script:diagnosticSource
+      $blocked.Eligible | Should -BeFalse
+      ($blocked.Media.Diagnostic | ConvertTo-Json) | Should -Be ($script:mediaDetail | ConvertTo-Json)
+    }
+  }
+}
+
 Describe 'Imported Office nullable collections' {
   BeforeAll {
     Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue
@@ -2220,6 +2371,8 @@ Describe 'Office pre-fix migration journal continuation' {
       LanguageEvidence = @(); VerificationLimitations = @()
     }
     $originalPlan = Get-OfficeDeploymentPlan -Action Migrate -Configuration $recoveryTarget -Inventory $historicalBefore -SourcePath (Join-Path $TestDrive 'media') -RemoveProductId Standard2019Volume
+    # Older plans did not retain the optional media assessment.
+    $originalPlan.PSObject.Properties.Remove('Media')
     $script:originalRecord = [PSCustomObject][ordered]@{
       SchemaVersion = 1; RunId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'; MachineId = 'synthetic-machine'; Action = 'Migrate'
       Plan = $originalPlan; ConfigurationFingerprint = Get-PSFOfficeFingerprint $recoveryTarget; MediaFingerprint = 'synthetic-media'

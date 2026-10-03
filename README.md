@@ -318,7 +318,10 @@ version used for a later execution. This is additive within schema 1 and does no
 `Diagnostic` adds safe structured detail where available. Media trust failures identify the object/path, owner or write-grant SID, rights,
 and inheritance. Recovery validation failures identify the read/JSON/schema/identity/context/settings/fingerprint stage and safe error
 category; direct reader errors expose this under `Exception.Data['OfficeDiagnostic']`, alongside the existing `OfficeReason`. Malformed
-journal contents and raw parser exception text are not echoed. These diagnostics do not repair ACLs or relax validation.
+journal contents and raw parser exception text are not echoed. These diagnostics do not repair ACLs or relax validation. New plans retain
+the assessment under optional `Media` metadata. Preparation, plan revalidation, staging and recovery preserve its safe diagnostic on
+validation failure; a valid assessment with only a changed fingerprint does not become an ACL/JSON error. Older plans and journals without
+`Media` remain readable. Recorded assessments are informational; execution and recovery always validate media afresh.
 
 Recovery journals are written atomically under `%ProgramData%\PSFoundation-Office` by default. They contain no product keys. A key is
 accepted only as `SecureString` and materialized in protected temporary XML for ODT; it is never placed on a process command line. Secure
