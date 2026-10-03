@@ -1188,13 +1188,51 @@ function Dismount-DefaultUserHive {
   Write-Log -Message "Unloaded HKEY_USERS\$MountName on retry." -Color Green
 }
 
+function Invoke-PSFRegistryFileCommand {
+  [CmdletBinding()]
+  param (
+    [string[]]$ArgumentList,
+    [string]$OutputPath,
+    [switch]$Export
+  )
+
+  $destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
+  $temporary = Join-Path (Split-Path $destination -Parent) ('.psf-reg-' + [guid]::NewGuid().ToString('N') + '.tmp')
+  try {
+    if ($Export) {
+      $native = Invoke-SafeProcess -FilePath 'reg.exe' -ArgumentList @('export', $ArgumentList[0], $temporary, '/y') -AsResult -ErrorAction Stop
+    }
+    else {
+      $native = Invoke-SafeProcess -FilePath 'reg.exe' -ArgumentList $ArgumentList -OutputPath $temporary -AsResult -ErrorAction Stop
+    }
+    if ($native.TimedOut -or $native.Cancelled -or $null -eq $native.ExitCode -or $native.ExitCode -ne 0) {
+      throw 'Registry command did not complete successfully; the destination was not replaced.'
+    }
+    if (-not [IO.File]::Exists($temporary) -or (Get-Item -LiteralPath $temporary -ErrorAction Stop).Length -eq 0) {
+      throw 'Registry command did not produce a nonempty output file; the destination was not replaced.'
+    }
+    if ([IO.File]::Exists($destination)) {
+      [IO.File]::Replace($temporary, $destination, [System.Management.Automation.Language.NullString]::Value)
+    }
+    else {
+      [IO.File]::Move($temporary, $destination)
+    }
+  }
+  finally {
+    if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+  }
+}
+
 function Export-RegistryKey {
   <#
     .SYNOPSIS
       Exports a registry key to a .reg text file via reg.exe.
     .DESCRIPTION
       Calls reg.exe export /y against the supplied key. Uses Invoke-SafeProcess
-      internally so stdout/stderr are captured.
+      internally and checks the native result. Publishes a nonempty export only
+      after successful completion, replacing an existing destination atomically.
+      A failed command leaves the previous destination intact. Returns a Boolean;
+      failures also write an error (terminating with ErrorAction Stop).
     .PARAMETER Key
       Registry key path, e.g. 'HKLM\Software\Microsoft\Windows\CurrentVersion\Run'.
     .PARAMETER OutputPath
@@ -1220,7 +1258,7 @@ function Export-RegistryKey {
   )
 
   try {
-    $null = Invoke-SafeProcess -FilePath 'reg.exe' -ArgumentList @('export', $Key, $OutputPath, '/y')
+    Invoke-PSFRegistryFileCommand -ArgumentList @($Key) -OutputPath $OutputPath -Export
     return $true
   }
   catch {
@@ -1236,7 +1274,10 @@ function Search-RegistryKey {
     .DESCRIPTION
       Calls reg.exe query <Root> /f <Pattern> /s to recursively search for a
       string or pattern across a registry hive. Output is written to -OutputPath.
-      Uses Invoke-SafeProcess internally.
+      Uses Invoke-SafeProcess internally and checks the native result. Publishes
+      captured output only after success, preserving an existing destination on
+      failure. Returns a Boolean and writes an error on failure. No matches is a
+      native failure, not a successful empty report.
     .PARAMETER Root
       Registry hive root, e.g. 'HKLM', 'HKCU'.
     .PARAMETER Pattern
@@ -1268,7 +1309,7 @@ function Search-RegistryKey {
   )
 
   try {
-    $null = Invoke-SafeProcess -FilePath 'reg.exe' -ArgumentList @('query', $Root, '/f', $Pattern, '/s') -OutputPath $OutputPath
+    Invoke-PSFRegistryFileCommand -ArgumentList @('query', $Root, '/f', $Pattern, '/s') -OutputPath $OutputPath
     return $true
   }
   catch {

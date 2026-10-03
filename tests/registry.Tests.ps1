@@ -5,6 +5,60 @@ BeforeAll {
   . $PSScriptRoot/../src/registry.ps1
 }
 
+Describe 'Imported registry file commands' {
+  BeforeAll { Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force }
+  BeforeEach {
+    $script:registryOutput = Join-Path $TestDrive 'existing export.reg'
+    [IO.File]::WriteAllText($registryOutput, 'preserved original')
+    $script:nativeOutcome = 'success'
+    Mock Invoke-SafeProcess {
+      if ($script:nativeOutcome -eq 'launch') { throw 'Synthetic launch failure' }
+      $path = $OutputPath
+      if ($ArgumentList[0] -eq 'export') { $path = $ArgumentList[2] }
+      if ($script:nativeOutcome -ne 'missing') {
+        $content = 'new registry output'
+        if ($script:nativeOutcome -eq 'empty') { $content = '' }
+        [IO.File]::WriteAllText($path, $content)
+      }
+      [PSCustomObject]@{
+        ExitCode  = $(if ($script:nativeOutcome -eq 'nonzero') { 1 } elseif ($script:nativeOutcome -ne 'noexit') { 0 })
+        TimedOut  = $script:nativeOutcome -eq 'timeout'
+        Cancelled = $script:nativeOutcome -eq 'cancelled'
+      }
+    } -ModuleName PSFoundation
+  }
+
+  It 'publishes a successful <Operation> with an existing or new destination' -ForEach @(
+    @{ Operation = 'export' }, @{ Operation = 'search' }
+  ) {
+    foreach ($path in @($registryOutput, (Join-Path $TestDrive 'new report.reg'))) {
+      if ($Operation -eq 'export') { PSFoundation\Export-RegistryKey -Key 'HKCU\Software\Synthetic' -OutputPath $path | Should -BeTrue }
+      else { PSFoundation\Search-RegistryKey -Root 'HKCU\Software\Synthetic' -Pattern 'Synthetic' -OutputPath $path | Should -BeTrue }
+      [IO.File]::ReadAllText($path) | Should -Be 'new registry output'
+    }
+    Should -Invoke Invoke-SafeProcess -ModuleName PSFoundation -Times 2 -Exactly -ParameterFilter { $AsResult -and $FilePath -eq 'reg.exe' }
+    @(Get-ChildItem $TestDrive -Filter '.psf-reg-*' -Force).Count | Should -Be 0
+  }
+
+  It 'preserves the destination after <Outcome> for both commands' -ForEach @(
+    @{ Outcome = 'nonzero' }, @{ Outcome = 'noexit' }, @{ Outcome = 'launch' }, @{ Outcome = 'timeout' },
+    @{ Outcome = 'cancelled' }, @{ Outcome = 'missing' }, @{ Outcome = 'empty' }
+  ) {
+    $script:nativeOutcome = $Outcome
+    PSFoundation\Export-RegistryKey -Key 'HKCU\Software\Synthetic' -OutputPath $registryOutput -ErrorAction SilentlyContinue | Should -BeFalse
+    [IO.File]::ReadAllText($registryOutput) | Should -Be 'preserved original'
+    PSFoundation\Search-RegistryKey -Root 'HKCU\Software\Synthetic' -Pattern 'Synthetic' -OutputPath $registryOutput -ErrorAction SilentlyContinue | Should -BeFalse
+    [IO.File]::ReadAllText($registryOutput) | Should -Be 'preserved original'
+    @(Get-ChildItem $TestDrive -Filter '.psf-reg-*' -Force).Count | Should -Be 0
+  }
+
+  It 'honors terminating error preference without replacing the destination' {
+    $script:nativeOutcome = 'nonzero'
+    { PSFoundation\Export-RegistryKey -Key 'HKCU\Software\Synthetic' -OutputPath $registryOutput -ErrorAction Stop } | Should -Throw '*Failed to export*'
+    [IO.File]::ReadAllText($registryOutput) | Should -Be 'preserved original'
+  }
+}
+
 Describe 'Registry setting snapshots and restoration' {
   BeforeAll { . $PSScriptRoot/../src/common.ps1 }
   BeforeEach {
