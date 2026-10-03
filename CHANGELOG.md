@@ -1,3 +1,10 @@
+## [1.8.7](https://github.com/adnoctem/PSFoundation/compare/v1.8.6...v1.8.7) (2026-10-03)
+
+### Bug Fixes
+
+- **src:** manage existing Outlook PST attachment lifetimes
+  ([3995149](https://github.com/adnoctem/PSFoundation/commit/3995149c5fb86efe07431e905bc8a5846da8f2ee))
+
 ## [1.8.6](https://github.com/adnoctem/PSFoundation/compare/v1.8.5...v1.8.6) (2026-10-03)
 
 ### Bug Fixes
