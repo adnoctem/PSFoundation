@@ -1136,6 +1136,55 @@ Describe 'Imported Office migration repeat authority' {
   }
 }
 
+Describe 'Imported Office shared source locales' {
+  BeforeAll { Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force }
+  BeforeEach {
+    $script:localeTarget = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Version 16.0.10417.20211
+    $script:localeInventory = New-TestOfficeInventory $localeTarget
+    $localeInventory | Add-Member NoteProperty VerificationLimitations @()
+    Mock Get-OfficeInventory { $script:localeInventory } -ModuleName PSFoundation
+  }
+
+  It 'preserves <Languages> with an agreed primary across two products' -ForEach @(
+    @{ Languages = @('en-us') }, @{ Languages = @('de-de') },
+    @{ Languages = @('en-us', 'de-de') }, @{ Languages = @('de-de', 'en-us') }
+  ) {
+    $localeInventory.Products[0].Languages = $Languages
+    $localeInventory.Products[0].PrimaryLanguage = $Languages[0]
+    $other = $localeInventory.Products[0] | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+    $other.ProductId = 'VisioPro2019Volume'
+    $localeInventory.Products += $other
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -AutoSourceLocales
+    $target.Language | Should -Be $Languages
+    $target.PrimaryLanguage | Should -Be $Languages[0]
+    $target.LocaleSource | Should -Be InstalledOffice
+    $explicit = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Language $Languages
+    $explicit.Language | Should -Be $Languages
+  }
+
+  It 'preserves the union of observed UI languages when primaries agree' {
+    $other = $localeInventory.Products[0] | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+    $other.ProductId = 'VisioPro2019Volume'
+    $other.Languages = @('en-us', 'de-de')
+    $localeInventory.Products += $other
+    (PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -AutoSourceLocales).Language | Should -Be @('en-us', 'de-de')
+  }
+
+  It 'requires explicit intent for <Ambiguity>' -ForEach @(
+    @{ Ambiguity = 'different primaries' }, @{ Ambiguity = 'missing languages' }, @{ Ambiguity = 'MSI' }
+  ) {
+    $other = $localeInventory.Products[0] | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+    $other.ProductId = 'VisioPro2019Volume'
+    if ($Ambiguity -eq 'different primaries') { $other.Languages = @('de-de'); $other.PrimaryLanguage = 'de-de' }
+    if ($Ambiguity -eq 'missing languages') { $other.Languages = $null }
+    if ($Ambiguity -eq 'MSI') { $localeInventory.Msi = @([PSCustomObject]@{ ProductCode = 'synthetic'; Name = 'Office'; Version = '12.0.1.0' }) }
+    $localeInventory.Products += $other
+    { PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -AutoSourceLocales } | Should -Throw '*Supply Language explicitly*'
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Migrate -Configuration $localeTarget -RemoveProductId Standard2019Volume, VisioPro2019Volume -RemoveMsi
+    $plan.LanguageTransition.Known | Should -BeFalse
+  }
+}
+
 Describe 'Office plans and narrow XML generation' {
   BeforeEach {
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language en-us, de-de -Version 16.0.17932.20162

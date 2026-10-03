@@ -720,6 +720,26 @@ function Get-PSFOfficeOsLocale {
   }
 }
 
+function Get-PSFOfficeSourceLocale {
+  [CmdletBinding()]
+  param ([object]$Inventory)
+
+  $products = @($Inventory.Products)
+  $languages = @($products | ForEach-Object { $_.Languages } | Where-Object { $_ } | Sort-Object -Unique)
+  $primaries = @($products | ForEach-Object { $_.PrimaryLanguage } | Where-Object { $_ } | Sort-Object -Unique)
+  $incomplete = @($products | Where-Object {
+      $null -eq $_.Languages -or -not @($_.Languages).Count -or -not $_.PrimaryLanguage -or $_.PrimaryLanguage -notin $_.Languages
+    })
+  $known = $products.Count -gt 0 -and -not $Inventory.Unknowns.Count -and -not $Inventory.Msi.Count -and
+  -not $incomplete.Count -and $primaries.Count -eq 1
+  [PSCustomObject]@{
+    Known           = $known
+    Languages       = $languages
+    PrimaryLanguage = if ($known) { $primaries[0] } else { $null }
+    Evidence        = @($products | ForEach-Object { if ($_.PSObject.Properties['Evidence']) { $_.Evidence } })
+  }
+}
+
 function New-OfficeDeploymentConfiguration {
   <#
     .SYNOPSIS
@@ -808,10 +828,10 @@ function New-OfficeDeploymentConfiguration {
     }
     else {
       $inventory = Get-OfficeInventory
-      if ($inventory.Unknowns.Count -or $inventory.Msi.Count -or @($inventory.Products).Count -ne 1) {
-        Stop-PSFOfficeOperation LocaleDiscoveryFailed 'Installed Office language preservation requires one fully observed Click-to-Run product.'
+      $found = Get-PSFOfficeSourceLocale $inventory
+      if (-not $found.Known) {
+        Stop-PSFOfficeOperation LocaleDiscoveryFailed 'Installed Office language preservation requires fully observed Click-to-Run products with one agreed primary language and no MSI or unknown inventory. Supply Language explicitly.'
       }
-      $found = $inventory.Products[0]
     }
     if (-not $found.PrimaryLanguage -or $null -eq $found.Languages -or -not $found.Languages.Count -or $found.PrimaryLanguage -notin $found.Languages) {
       Stop-PSFOfficeOperation LocaleDiscoveryFailed 'No unambiguous primary Office language was observed. Supply Language explicitly.'
@@ -1975,7 +1995,8 @@ function Get-OfficeDeploymentPlan {
     [void]$blockers.Add('MissingMedia')
   }
   $sourceLanguages = @($Inventory.Products | ForEach-Object { $_.Languages } | Where-Object { $_ } | Sort-Object -Unique)
-  $languageKnown = ($Inventory.Msi.Count -eq 0 -and @($Inventory.Products | Where-Object { $null -eq $_.Languages -or -not $_.PrimaryLanguage }).Count -eq 0)
+  $languageKnown = ($Inventory.Msi.Count -eq 0 -and -not $Inventory.Unknowns.Count -and
+    ($Inventory.Products.Count -eq 0 -or (Get-PSFOfficeSourceLocale $Inventory).Known))
   $transition = $null
   if ($target) {
     $transition = [PSCustomObject]@{
