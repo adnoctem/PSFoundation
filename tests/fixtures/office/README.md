@@ -15,3 +15,14 @@ channel URL is reduced to its channel identifier. The product-resource fallback 
 resource; shared culture leaves and configuration telemetry cannot establish the product build by themselves. Tests also model the x64
 sample's agreeing `16.0.10417.20211` versions and deliberately inconsistent registrations. The fixture does not establish application health
 or full resource completeness.
+
+The imported-module closeout cases reuse these reduced shapes and explicitly construct synthetic changes: empty/missing/malformed exclusion
+values, English/German primary-language orders, multiple Click-to-Run products, unknown fields, retained Visio/Project products and a
+different source product ID. Those mutations exercise contracts; they are not captures of those workstation combinations. Machine identity,
+ACL SIDs, media paths, and recovery journals used by tracked tests are synthetic.
+
+The accepted Standard 2019 x86-to-x64 continuation supplied the observed target build/language and no-op result shape. Tests recreate the
+relevant configuration and inventory without copying the private journal or identity. The different-source-ID repeat is synthetic.
+Historical schema-1 recovery tests cover JSON round trips, unchanged recorded fingerprints, pre-launch/completed-removal checkpoints,
+complete targets and explicitly unsupported uncertain states through a full module import. Native recovery acceptance is limited to the
+separately recorded post-removal continuation; a mock checkpoint is not an interruption experiment.

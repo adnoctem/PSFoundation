@@ -258,6 +258,10 @@ Default language is exactly `en-us`, independent of the operating system or acco
 the primary shell language. `-AutoSourceLocales` opts into installed-Office discovery; add `-LocaleSource OperatingSystem` to use the
 machine installation UI language from `HKLM\SYSTEM\CurrentControlSet\Control\Nls\Language:InstallLanguage`. This is not the user's display
 language, keyboard layout, or regional format. Ambiguous installed-Office language evidence is a blocker rather than an implicit fallback.
+For multiple Click-to-Run products, automatic sourcing requires complete per-product language observations and one agreed primary language;
+it preserves that primary first and includes the union of observed languages. Conflicting primaries, unknown inventory, and legacy MSI
+sources require explicit language intent. Explicit `-Language` and `-AutoSourceLocales` are mutually exclusive. UI languages, language
+interface packs, and proofing resources are distinct; this discovery does not establish complete MSI or proofing-resource coverage.
 
 `Get-OfficeInventory` retains App Paths observations in `AppPathEvidence`: registry view/key, raw and resolved target, `State` and `Reason`.
 Confirmed missing executable references do not by themselves count as Click-to-Run residue. Present or uncertain Click-to-Run references
@@ -307,6 +311,15 @@ installer fails. Installation verification and activation are independent. Wrapp
 retaining native exit codes. Use `ConvertTo-Json -Depth 30` for the complete nested result. Do not flatten unknowns into successful
 compliance.
 
+Workflow results also include `Execution` (`ModuleVersion`, `ModulePath`, `PowerShellVersion`, `PowerShellEdition`, `ProcessBitness`) from
+the executing module and process. Journal result/log metadata retains this context; an earlier preparation report does not establish the
+version used for a later execution. This is additive within schema 1 and does not rewrite historical inventory or journal fingerprints.
+
+`Diagnostic` adds safe structured detail where available. Media trust failures identify the object/path, owner or write-grant SID, rights,
+and inheritance. Recovery validation failures identify the read/JSON/schema/identity/context/settings/fingerprint stage and safe error
+category; direct reader errors expose this under `Exception.Data['OfficeDiagnostic']`, alongside the existing `OfficeReason`. Malformed
+journal contents and raw parser exception text are not echoed. These diagnostics do not repair ACLs or relax validation.
+
 Recovery journals are written atomically under `%ProgramData%\PSFoundation-Office` by default. They contain no product keys. A key is
 accepted only as `SecureString` and materialized in protected temporary XML for ODT; it is never placed on a process command line. Secure
 erasure of storage and redaction of ODT's own logs cannot be guaranteed. Cleanup failures retain the original error and report protected
@@ -325,6 +338,20 @@ support. Routine tests mock ODT and do not certify any real Office installation.
 verification of completed installations, pre-launch continuation, and migration continuation after verified Click-to-Run removal. Replaying
 an uncertain partial installer returns `UnsupportedRecoveryState`; Quick Repair, Online Repair, rollback, and journal-free mutation are not
 implemented.
+
+ODT execution deliberately has no forced timeout or cancellation kill policy: `setup.exe` may delegate work to shared services. Tests of
+generic process cancellation and the ODT download extractor do not establish safe cancellation of a live Office installation. Application
+closure requires explicit consent. A held deployment lock or a changed inventory blocks execution before any installer launch.
+
+| Recovery observation                                                      | Decision                                                                                  |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Fresh state fully verifies the recorded destination, including activation | Complete verification without another ODT invocation                                      |
+| Supported pre-launch checkpoint                                           | Revalidate authority, host, media and state; preview/continue the original operation      |
+| Migration checkpoint after confirmed completed C2R removal                | Continue installation of the recorded destination without repeating removal               |
+| Busy deployment or pending reboot                                         | Stop and wait/resolve the reported prerequisite                                           |
+| Uncertain partial installation or unverified unsupported checkpoint       | `UnsupportedRecoveryState`; inspect native state/logs before a separately reviewed action |
+
+These are decisions constrained by the recorded action and current gates, not permission to replay any failed journal.
 
 Inventory resolves installed builds in evidence order:
 
@@ -368,6 +395,11 @@ preferences.
 These inventory fields are additive within schema 1. Existing plans must be recreated after inventory changes; execution revalidates current
 observations. Existing recovery journals remain subject to their original authority and the current verification gates.
 
+Per-product `ExcludedApps` registration is observed separately from requested configuration: an explicitly empty string yields an empty
+`ExcludeApp` list; an absent, null or malformed value stays unknown. Valid strings are normalized for whitespace, case, order and
+duplicates, with the selected registry value recorded in `Evidence`. Missing data does not prove every application is installed, and shared
+executable presence alone cannot establish a SKU's application selection. No unsupported fallback is inferred from the requested XML.
+
 ### Migration and historical pilot records
 
 Migrations use ordinary schema-1 plans and `Switch-OfficeDeployment`. The former `-PilotMigration` option and scenario-specific
@@ -380,9 +412,31 @@ failed verification must not be replayed to change its reporting status.
 
 An Office Enterprise 2007 x86 to Standard 2019 x64 migration on Windows 10 22H2 x64 completed with native exit 0 and licensed activation.
 The operator verified German UI, the intended proofing resources, applications, add-ins, and Outlook profile/data/settings preservation.
-Post-installation reporting exposed an infrastructure-classification defect and a remaining legacy File Validation Add-In; native success
-and manual acceptance are therefore recorded separately from automated compliance. The Office 2019 captures lack the installed-build
-inventory key. Verified repeat runs, additional deployment combinations, and interrupted-installer recovery remain separate validation work.
+Post-installation reporting exposed an infrastructure-classification defect and a remaining legacy File Validation Add-In registration;
+native success and manual acceptance are therefore recorded separately from automated compliance. The Office 2019 captures lack the
+installed-build inventory key. The pilot's missing exclusion evidence and the add-in's actual Windows Installer state remain separate
+read-only follow-ups.
+
+A subsequent Standard 2019 x86 to x64 migration is accepted through release 1.8.5: ordinary post-removal recovery completed the pinned
+German 16.0.10417.20211 target, automated compliance and licensed activation passed, and the operator accepted applications, mail,
+signatures and settings. An unchanged execution and preview both returned `Completed` / `AlreadyCompliant`, `Changed=false`,
+`ChangeKnown=true`, exit 0 and no native results. This validates that migration and continuation; it does not establish CDN independence or
+arbitrary interrupted-install replay. Identical migration requests with a now-absent, different source product ID also return the verified
+no-op; that variation has imported-module regression coverage and still requires native validation for the next source SKU.
+
+| Scenario                                                                                            | Evidence and remaining boundary                                                                    |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Enterprise 2007 x86 to Standard 2019 x64, de-de, Windows 10 22H2 x64                                | Native migration and manual preservation accepted; pilot exclusions/add-in state remain unresolved |
+| Standard 2019 x86 to x64, de-de, pinned .20211                                                      | Native continuation, compliance, activation, manual acceptance and unchanged repeat accepted       |
+| Clean install, selected removal with retained C2R products, maintenance                             | Automated coverage; native shared-resource/preservation and effective-policy checks remain         |
+| English/bilingual order, multiple C2R products, different source IDs, newer targets                 | Synthetic regression coverage where implemented; native product/language matrix remains            |
+| SYSTEM execution, network shares, offline-only payload installation                                 | Requires dedicated native identity/access/network evidence                                         |
+| Standalone MSI removal, uncertain partial-installer replay, Quick/Online Repair, automatic rollback | Unsupported                                                                                        |
+| Outlook archive/optimization, legacy MAPI, targeted ScanPST                                         | Separate native workflows; successful Office migration or process exit is not repair proof         |
+
+Tests import the module under strict mode for acceptance-level regressions. Sanitized registry observations and synthetic variants are
+identified in [fixture provenance](tests/fixtures/office/README.md). Passing mocked tests does not expand the host or native acceptance
+matrix.
 
 Microsoft references: [ODT operations](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/overview-office-deployment-tool),
 [configuration and language behavior](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/office-deployment-tool-configuration-options),
