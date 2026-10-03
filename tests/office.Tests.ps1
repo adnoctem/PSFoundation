@@ -1207,6 +1207,75 @@ Describe 'Imported Office shared source locales' {
   }
 }
 
+Describe 'Imported Office removal and concurrency verification' {
+  BeforeAll { Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force }
+
+  It 'verifies selective removal with <Retained> unchanged retained products' -ForEach @(
+    @{ Retained = 0 }, @{ Retained = 1 }, @{ Retained = 2 }
+  ) {
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Version 16.0.10417.20211
+    $before = New-TestOfficeInventory $target
+    $before | Add-Member NoteProperty RelatedComponents @()
+    $before | Add-Member NoteProperty VerificationLimitations @()
+    foreach ($id in @('VisioPro2019Volume', 'ProjectPro2019Volume') | Select-Object -First $Retained) {
+      $product = $before.Products[0] | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+      $product.ProductId = $id
+      $before.Products += $product
+    }
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Remove -RemoveProductId Standard2019Volume -Inventory $before
+    $plan.Eligible | Should -BeTrue
+    $after = $before | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    $after.Products = @($after.Products | Where-Object ProductId -NE Standard2019Volume)
+    $observed = & (Get-Module PSFoundation) { param ($Plan, $After) Test-PSFOfficePostcondition $Plan $After } $plan $after
+    $observed.Compliant | Should -BeTrue
+    $observed.Discrepancies.Count | Should -Be 0
+    if ($Retained) {
+      $after.Products[0].Languages = @('de-de')
+      (& (Get-Module PSFoundation) { param ($Plan, $After) Test-PSFOfficePostcondition $Plan $After } $plan $after).Compliant | Should -BeFalse
+      $before.Products[1].ExcludeApp = $null
+      (PSFoundation\Get-OfficeDeploymentPlan -Action Remove -RemoveProductId Standard2019Volume -Inventory $before).Blockers | Should -Contain UnsupportedSharedComponentVerification
+    }
+    $after.Products = @([PSCustomObject]@{ ProductId = 'UnexpectedRetail' })
+    $observed = & (Get-Module PSFoundation) { param ($Plan, $After) Test-PSFOfficePostcondition $Plan $After } $plan $after
+    $observed.Compliant | Should -BeFalse
+    $observed.Discrepancies | Should -Contain 'UnexpectedProduct:UnexpectedRetail'
+  }
+
+  It 'prevents native execution when <Guard>' -ForEach @(
+    @{ Guard = 'the lock is held'; Reason = 'DeploymentBusy' }
+    @{ Guard = 'inventory changes before lock acquisition'; Reason = 'StalePlan' }
+  ) {
+    $script:guardTarget = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Version 16.0.10417.20211
+    $script:guardInventory = New-TestOfficeInventory
+    $guardInventory | Add-Member NoteProperty VerificationLimitations @()
+    Mock Get-OfficeInventory { $script:guardInventory } -ModuleName PSFoundation
+    Mock Test-OfficeDeploymentMedia { [PSCustomObject]@{ Valid = $true; Fingerprint = 'synthetic-media' } } -ModuleName PSFoundation
+    Mock Assert-PSFOfficeHost { } -ModuleName PSFoundation
+    Mock Test-OfficeDeploymentTool { [PSCustomObject]@{ Valid = $true } } -ModuleName PSFoundation
+    Mock Get-PSFOfficeActivity { [PSCustomObject]@{ Busy = $false; Apps = @() } } -ModuleName PSFoundation
+    Mock Invoke-PSFOfficeConfiguration { throw 'Must not execute' } -ModuleName PSFoundation
+    Mock New-PSFOfficeProtectedDirectory { throw 'Must not create directories' } -ModuleName PSFoundation
+    if ($Guard -eq 'the lock is held') {
+      Mock Enter-PSFOfficeLock { $failure = [InvalidOperationException]::new('Synthetic busy lock'); $failure.Data['OfficeReason'] = 'DeploymentBusy'; throw $failure } -ModuleName PSFoundation
+    }
+    else {
+      Mock Enter-PSFOfficeLock {
+        $script:guardInventory.Products = @([PSCustomObject]@{ ProductId = 'AnotherInstallation' })
+        $lock = [PSCustomObject]@{}
+        $lock | Add-Member ScriptMethod ReleaseMutex { }
+        $lock | Add-Member ScriptMethod Dispose { }
+        $lock
+      } -ModuleName PSFoundation
+    }
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Install -Configuration $guardTarget -SourcePath C:\Synthetic
+    $result = PSFoundation\Install-Office -Plan $plan -OdtPath C:\Unused\setup.exe -LogRoot $TestDrive -Confirm:$false
+    $result.ReasonCode | Should -Be $Reason
+    $result.Changed | Should -BeFalse
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
+    Should -Invoke New-PSFOfficeProtectedDirectory -ModuleName PSFoundation -Times 0
+  }
+}
+
 Describe 'Office plans and narrow XML generation' {
   BeforeEach {
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language en-us, de-de -Version 16.0.17932.20162

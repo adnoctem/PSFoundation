@@ -3473,17 +3473,19 @@ function Test-PSFOfficePostcondition {
     $remaining = @($After.Products | ForEach-Object { $_.ProductId })
     $retained = @($Plan.Before.Products | Where-Object { $_.ProductId -notin $Plan.RemoveProductId })
     $missing = @($retained | Where-Object { $_.ProductId -notin $remaining })
+    $unexpected = @($After.Products | Where-Object { $_.ProductId -notin @($Plan.Before.Products | ForEach-Object { $_.ProductId }) })
     $changed = @($retained | Where-Object {
         $beforeProduct = $_
         $afterProduct = @($After.Products | Where-Object { $_.ProductId -eq $beforeProduct.ProductId })
         $afterProduct.Count -ne 1 -or (Get-PSFOfficeFingerprint $beforeProduct) -ne (Get-PSFOfficeFingerprint $afterProduct[0])
       })
     $valid = (-not @($Plan.RemoveProductId | Where-Object { $_ -in $remaining }).Count -and
-      -not $missing.Count -and -not $changed.Count -and -not $After.Unknowns.Count -and
+      -not $missing.Count -and -not $changed.Count -and -not $unexpected.Count -and -not $After.Unknowns.Count -and
       (Get-PSFOfficeFingerprint @($Plan.Before.Msi)) -eq (Get-PSFOfficeFingerprint @($After.Msi)))
     return [PSCustomObject]@{
       Compliant     = $valid
-      Discrepancies = @($missing.ProductId) + @($changed.ProductId)
+      Discrepancies = @($missing | ForEach-Object { $_.ProductId }) + @($changed | ForEach-Object { $_.ProductId }) +
+      @($unexpected | ForEach-Object { 'UnexpectedProduct:' + $_.ProductId })
       Unknowns      = @($After.Unknowns)
     }
   }
