@@ -202,6 +202,20 @@ Describe 'Imported Office strict-mode settings' {
       }
     }
   }
+
+  It 'plans an update with optional Channel absent on <Kind> settings' -ForEach @(
+    @{ Kind = 'dictionary' }, @{ Kind = 'object' }
+  ) {
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Language de-de -Version 16.0.10417.20211
+    $inventory = New-TestOfficeInventory $target
+    $inventory | Add-Member NoteProperty VerificationLimitations @()
+    $settings = @{ Enabled = $false }
+    if ($Kind -eq 'object') { $settings = '{"Enabled":false}' | ConvertFrom-Json }
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action SetUpdateConfiguration -Configuration $target -Inventory $inventory -Settings $settings
+    $plan.Eligible | Should -BeTrue
+    $plan.Settings.Enabled | Should -BeFalse
+    $plan.Configuration.Channel | Should -Be PerpetualVL2019
+  }
 }
 
 Describe 'Imported Office sparse registry values' {

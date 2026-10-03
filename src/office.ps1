@@ -1846,7 +1846,10 @@ function Get-OfficeDeploymentPlan {
   if ($Action -ne 'Remove' -and -not $target) {
     Stop-PSFOfficeOperation InvalidConfiguration 'This operation requires a complete target configuration.'
   }
-  if ($Action -eq 'SetUpdateConfiguration' -and $Settings.Channel) {
+  $settingNames = @()
+  if ($Settings -is [Collections.IDictionary]) { $settingNames = @($Settings.Keys) }
+  else { $settingNames = @($Settings.PSObject.Properties | ForEach-Object { $_.Name }) }
+  if ($Action -eq 'SetUpdateConfiguration' -and 'Channel' -in $settingNames) {
     $null = New-OfficeDeploymentConfiguration -TargetProductId $target.TargetProductId -Channel $Settings.Channel -Language $target.Language
   }
   if ($Action -eq 'Remove' -and ($target -or $SourcePath -or (-not $selection.Count -and -not $RemoveMsi))) {
