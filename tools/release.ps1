@@ -13,7 +13,9 @@
   The script supports two modes:
 
   - Prepare mode (-Prepare): invoked by the @semantic-release/exec plugin during
-    the semantic-release prepare phase. Writes the resolved next version into
+    the semantic-release prepare phase after changelog generation. Formats the
+    changelog with the pinned Prettier version used by pre-commit, then writes
+    the resolved next version into
     src/PSFoundation.psd1 (ModuleVersion plus, for prerelease suffixes such as
     '1.1.0-beta.1', the PSData.Prerelease key), rebuilds the dist/ archives and
     writes the CHECKSUMS file, then exits. The manifest change is committed by
@@ -36,7 +38,8 @@
   it is validated against the manifest version and must match it.
 
 .PARAMETER Prepare
-  Run the semantic-release prepare phase only: synchronize the module manifest
+  Run the semantic-release prepare phase only: format the generated changelog
+  (requires Node/npm or Bun), synchronize the module manifest
   to -Version, rebuild the dist/ archives, regenerate the CHECKSUMS file, then
   exit without publishing.
 
@@ -109,6 +112,31 @@ $distPath = Join-Path -Path $repositoryRoot -ChildPath 'dist'
 $srcPath = Join-Path -Path $repositoryRoot -ChildPath 'src'
 $buildScript = Join-Path -Path $PSScriptRoot -ChildPath 'build.ps1'
 $checksumPath = Join-Path -Path $distPath -ChildPath 'CHECKSUMS_SHA256.txt'
+
+function Format-ReleaseChangelog {
+  [CmdletBinding(SupportsShouldProcess = $true)]
+  param (
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "Generated changelog is missing: $Path"
+  }
+  if ($PSCmdlet.ShouldProcess($Path, 'Format generated release changelog')) {
+    $commandName = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'npx.cmd' } else { 'npx' }
+    $formatter = Get-Command -Name $commandName -CommandType Application -ErrorAction SilentlyContinue
+    $runnerArgument = '--yes'
+    if (-not $formatter) {
+      $formatter = Get-Command -Name bun -CommandType Application -ErrorAction Stop
+      $runnerArgument = 'x'
+    }
+    & $formatter.Source $runnerArgument prettier@3.9.9 --write $Path --prose-wrap=always --end-of-line=crlf --print-width=140
+    if ($LASTEXITCODE -ne 0) {
+      throw "Changelog formatting failed with exit code $LASTEXITCODE."
+    }
+  }
+}
 
 function Split-ReleaseVersion {
   [CmdletBinding()]
@@ -288,6 +316,14 @@ if ($Prepare) {
   }
   $manifestFile = $manifestFiles[0].FullName
 
+  if ($DryRun -or $WhatIfPreference) {
+    Write-Output "[DRY RUN] Would format CHANGELOG.md and set the manifest version to $Version."
+    if (-not $SkipBuild) { Write-Output '[DRY RUN] Would rebuild release archives.' }
+    if (-not $SkipChecksums) { Write-Output '[DRY RUN] Would regenerate release checksums.' }
+    exit 0
+  }
+
+  Format-ReleaseChangelog -Path (Join-Path $repositoryRoot 'CHANGELOG.md') -Confirm:$false
   $null = Write-ReleaseManifest -Path $manifestFile -CoreVersion $versionInfo.CoreVersion -Prerelease ([string]$versionInfo.Prerelease)
   Write-Output "Manifest version set to $Version ($manifestFile)"
 

@@ -9,7 +9,7 @@ BeforeAll {
     (Join-Path $PSScriptRoot '../tools/release.ps1'), [ref]$tokens, [ref]$parseErrors
   )
   $script:releaseAst = $ast
-  foreach ($name in @('Write-DistChecksum', 'Get-ManifestAlignmentWidth', 'Write-ReleaseManifest')) {
+  foreach ($name in @('Write-DistChecksum', 'Get-ManifestAlignmentWidth', 'Write-ReleaseManifest', 'Format-ReleaseChangelog')) {
     $helper = $ast.Find({
         param($node)
         $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
@@ -56,6 +56,92 @@ BeforeAll {
     )
     [IO.File]::WriteAllText($Path, ($lines -join "`r`n"), (New-Object Text.UTF8Encoding($true)))
     $Path
+  }
+}
+
+Describe 'Release changelog preparation' {
+  It 'leaves an isolated release untouched with <Switch>' -ForEach @(@{ Switch = '-DryRun' }, @{ Switch = '-WhatIf' }) {
+    $root = Split-Path $PSScriptRoot -Parent
+    $copy = Join-Path $TestDrive 'isolated release'
+    $null = New-Item -ItemType Directory -Path (Join-Path $copy 'tools'), (Join-Path $copy 'src') -Force
+    Copy-Item -LiteralPath (Join-Path $root 'PSFoundation.ps1') -Destination $copy
+    Copy-Item -LiteralPath (Join-Path $root 'tools/release.ps1') -Destination (Join-Path $copy 'tools/release.ps1')
+    Set-Content -LiteralPath (Join-Path $copy 'tools/build.ps1') -Value 'throw "Build must not run during preview"'
+    $manifest = Write-TestManifest -Path (Join-Path $copy 'src/PSFoundation.psd1')
+    $changelog = Join-Path $copy 'CHANGELOG.md'
+    Set-Content -LiteralPath $changelog -Value '* Unformatted generated entry'
+    $hashes = @((Get-FileHash $manifest).Hash, (Get-FileHash $changelog).Hash)
+    $engine = (Get-Process -Id $PID).Path
+    $output = & $engine -NoProfile -ExecutionPolicy Bypass -File (Join-Path $copy 'PSFoundation.ps1') release -Prepare -Version 9.9.9 $Switch
+    $LASTEXITCODE | Should -Be 0
+    ($output -join ' ') | Should -Match 'DRY RUN'
+    (Get-FileHash $manifest).Hash | Should -Be $hashes[0]
+    (Get-FileHash $changelog).Hash | Should -Be $hashes[1]
+    Test-Path (Join-Path $copy 'dist') | Should -BeFalse
+  }
+
+  It 'formats the generated changelog with the pinned hook options' {
+    $path = Join-Path $TestDrive 'generated notes.md'
+    Set-Content -LiteralPath $path -Value '* Generated release note'
+    $fake = Join-Path $TestDrive 'formatter.ps1'
+    Set-Content -LiteralPath $fake -Value '$args; exit 0'
+    Mock Get-Command { [PSCustomObject]@{ Source = $fake } }
+    $arguments = @(Format-ReleaseChangelog -Path $path -Confirm:$false)
+    $arguments | Should -Contain 'prettier@3.9.9'
+    $arguments | Should -Contain $path
+    $arguments | Should -Contain '--prose-wrap=always'
+    $arguments | Should -Contain '--end-of-line=crlf'
+    $arguments | Should -Contain '--print-width=140'
+  }
+
+  It 'fails preparation when the formatter fails' {
+    $path = Join-Path $TestDrive 'generated.md'
+    Set-Content -LiteralPath $path -Value '* Generated release note'
+    $fake = Join-Path $TestDrive 'formatter.ps1'
+    Set-Content -LiteralPath $fake -Value 'exit 23'
+    Mock Get-Command { [PSCustomObject]@{ Source = $fake } }
+    { Format-ReleaseChangelog -Path $path -Confirm:$false } | Should -Throw '*exit code 23*'
+  }
+
+  It 'uses Bun when Node/npm is unavailable' {
+    $path = Join-Path $TestDrive 'generated.md'
+    Set-Content -LiteralPath $path -Value '* Generated release note'
+    $fake = Join-Path $TestDrive 'formatter.ps1'
+    Set-Content -LiteralPath $fake -Value '$args; exit 0'
+    Mock Get-Command { $null }
+    Mock Get-Command { [PSCustomObject]@{ Source = $fake } } -ParameterFilter { $Name -eq 'bun' }
+    $arguments = @(Format-ReleaseChangelog -Path $path -Confirm:$false)
+    $arguments[0] | Should -Be 'x'
+    $arguments[1] | Should -Be 'prettier@3.9.9'
+    Should -Invoke Get-Command -Times 1 -ParameterFilter { $Name -eq 'bun' }
+  }
+
+  It 'rejects a missing generated changelog before finding a formatter' {
+    Mock Get-Command { throw 'Must not launch a formatter' }
+    { Format-ReleaseChangelog -Path (Join-Path $TestDrive 'absent.md') } | Should -Throw '*changelog is missing*'
+    Should -Invoke Get-Command -Times 0
+  }
+
+  It 'does not find or launch the formatter under WhatIf' {
+    $path = Join-Path $TestDrive 'unchanged.md'
+    Set-Content -LiteralPath $path -Value '* Generated release note'
+    $before = (Get-FileHash -LiteralPath $path).Hash
+    Mock Get-Command { throw 'Must not launch a formatter' }
+    Format-ReleaseChangelog -Path $path -WhatIf
+    (Get-FileHash -LiteralPath $path).Hash | Should -Be $before
+    Should -Invoke Get-Command -Times 0
+  }
+
+  It 'generates then formats the changelog before committing release artifacts' {
+    $root = Split-Path $PSScriptRoot -Parent
+    $config = Get-Content -LiteralPath (Join-Path $root '.releaserc') -Raw | ConvertFrom-Json
+    $names = @($config.plugins | ForEach-Object { $_[0] })
+    [Array]::IndexOf($names, '@semantic-release/changelog') | Should -BeLessThan ([Array]::IndexOf($names, '@semantic-release/exec'))
+    [Array]::IndexOf($names, '@semantic-release/exec') | Should -BeLessThan ([Array]::IndexOf($names, '@semantic-release/git'))
+    $exec = @($config.plugins | Where-Object { $_[0] -eq '@semantic-release/exec' })
+    $exec[0][1].prepareCmd | Should -Match 'PSFoundation\.ps1 release -Prepare'
+    $hook = Get-Content -LiteralPath (Join-Path $root '.pre-commit-config.yaml') -Raw
+    $hook | Should -Match 'prettier@3\.9\.9 --write.*--prose-wrap=always --end-of-line=crlf --print-width=140'
   }
 }
 
