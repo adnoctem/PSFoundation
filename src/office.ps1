@@ -1908,11 +1908,12 @@ function Get-OfficeDeploymentPlan {
   }
   if ($Action -eq 'Migrate') {
     $others = @($Inventory.Products | Where-Object { $_.ProductId -notin $selection })
-    # Retaining a target is only safe when every property is already compliant.
-    if ($others.Count -and -not ($state -eq 'Compliant' -and -not $selection.Count -and -not $Inventory.Msi.Count)) {
+    # Complete verification includes the absence of other products, MSI and
+    # unknowns. An absent original source then permits only a compliant no-op.
+    if ($others.Count -and $state -ne 'Compliant') {
       [void]$blockers.Add('UnapprovedProducts')
     }
-    if (@($selection | Where-Object { $_ -notin @($Inventory.Products | ForEach-Object { $_.ProductId }) }).Count) {
+    if ($state -ne 'Compliant' -and @($selection | Where-Object { $_ -notin @($Inventory.Products | ForEach-Object { $_.ProductId }) }).Count) {
       [void]$blockers.Add('StaleRemovalSelection')
     }
     if ($Inventory.Msi.Count -and -not $RemoveMsi) {

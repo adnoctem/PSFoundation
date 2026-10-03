@@ -999,6 +999,74 @@ Describe 'Imported Office installed-version evidence precedence' {
   }
 }
 
+Describe 'Imported Office migration repeat authority' {
+  BeforeAll { Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force }
+  BeforeEach {
+    $script:repeatTarget = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 64 -Language de-de -Version 16.0.10417.20211 -ExcludeApp Groove
+    $script:repeatInventory = New-TestOfficeInventory $repeatTarget
+    $repeatInventory | Add-Member NoteProperty VerificationLimitations @()
+    Mock Get-OfficeInventory { $script:repeatInventory } -ModuleName PSFoundation
+    Mock Get-OfficeActivationStatus { [PSCustomObject]@{ Status = 'Licensed' } } -ModuleName PSFoundation
+    Mock Invoke-PSFOfficeConfiguration { throw 'No native execution allowed' } -ModuleName PSFoundation
+    Mock Assert-PSFOfficeHost { throw 'No mutation preflight allowed' } -ModuleName PSFoundation
+  }
+
+  It 'returns an unchanged <Mode> repeat after the original product disappears' -ForEach @(
+    @{ Mode = 'execution' }, @{ Mode = 'preview' }, @{ Mode = 'whatif' }
+  ) {
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Migrate -Configuration $repeatTarget -RemoveProductId HomeBusiness2019Retail
+    $plan.Eligible | Should -BeTrue
+    $plan.State | Should -Be Compliant
+    $plan.RemoveProductId | Should -Be @('HomeBusiness2019Retail')
+    $result = PSFoundation\Switch-OfficeDeployment -Plan $plan -OdtPath C:\Unused\setup.exe -DryRun:($Mode -eq 'preview') -WhatIf:($Mode -eq 'whatif') -Confirm:$false
+    $result.Status | Should -Be Completed
+    $result.ReasonCode | Should -Be AlreadyCompliant
+    $result.Changed | Should -BeFalse
+    $result.ChangeKnown | Should -BeTrue
+    $result.WrapperExitCode | Should -Be 0
+    $result.NativeResults.Count | Should -Be 0
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
+  }
+
+  It 'retains blockers for <Difference> instead of granting repeat authority' -ForEach @(
+    @{ Difference = 'source present' }, @{ Difference = 'extra product' }, @{ Difference = 'unknown' },
+    @{ Difference = 'build' }, @{ Difference = 'languages' }, @{ Difference = 'exclusions' }, @{ Difference = 'MSI' }
+  ) {
+    switch ($Difference) {
+      'source present' { $repeatInventory.Products += [PSCustomObject]@{ ProductId = 'HomeBusiness2019Retail'; Languages = @('de-de'); PrimaryLanguage = 'de-de' } }
+      'extra product' { $repeatInventory.Products += [PSCustomObject]@{ ProductId = 'VisioPro2019Volume'; Languages = @('de-de'); PrimaryLanguage = 'de-de' } }
+      unknown { $repeatInventory.Unknowns = @('SyntheticUnknown') }
+      build { $repeatTarget.Version = '16.0.10417.20212' }
+      languages { $repeatTarget.Language = @('de-de', 'en-us') }
+      exclusions { $repeatTarget.ExcludeApp = @() }
+      MSI { $repeatInventory.Msi = @([PSCustomObject]@{ ProductCode = 'synthetic'; Name = 'Office'; Version = '12.0.1.0' }) }
+    }
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Migrate -Configuration $repeatTarget -RemoveProductId HomeBusiness2019Retail
+    $plan.Eligible | Should -BeFalse
+    $result = PSFoundation\Switch-OfficeDeployment -Plan $plan -OdtPath C:\Unused\setup.exe -Confirm:$false
+    $result.Status | Should -Be Blocked
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
+  }
+
+  It 'reports unverified activation without reinstalling a compliant destination' {
+    Mock Get-OfficeActivationStatus { [PSCustomObject]@{ Status = 'NotVerified' } } -ModuleName PSFoundation
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Migrate -Configuration $repeatTarget -RemoveProductId HomeBusiness2019Retail
+    $result = PSFoundation\Switch-OfficeDeployment -Plan $plan -OdtPath C:\Unused\setup.exe -Confirm:$false
+    $result.ReasonCode | Should -Be ActivationNotVerified
+    $result.WrapperExitCode | Should -Be 1
+    $result.Changed | Should -BeFalse
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
+  }
+
+  It 'retains selected removal AlreadyAbsent independently of migration' {
+    $plan = PSFoundation\Get-OfficeDeploymentPlan -Action Remove -RemoveProductId HomeBusiness2019Retail
+    $result = PSFoundation\Uninstall-Office -Plan $plan -OdtPath C:\Unused\setup.exe -Confirm:$false
+    $result.ReasonCode | Should -Be AlreadyAbsent
+    $result.Changed | Should -BeFalse
+    Should -Invoke Invoke-PSFOfficeConfiguration -ModuleName PSFoundation -Times 0
+  }
+}
+
 Describe 'Office plans and narrow XML generation' {
   BeforeEach {
     $script:target = New-OfficeDeploymentConfiguration -TargetProductId Standard2024Volume -Language en-us, de-de -Version 16.0.17932.20162
