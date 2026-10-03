@@ -35,6 +35,63 @@ BeforeAll {
   }
 }
 
+Describe 'Imported Office native machine identity' {
+  BeforeAll { Import-Module "$PSScriptRoot/../src/PSFoundation.psd1" -Force }
+
+  It 'uses the native view and preserves identity spelling while disposing handles' {
+    InModuleScope PSFoundation {
+      $script:identityValue = '{12345678-1234-1234-ABCD-1234567890AB}'
+      $script:identityKey = [PSCustomObject]@{ Disposed = $false }
+      $identityKey | Add-Member ScriptMethod GetValue { $script:identityValue }
+      $identityKey | Add-Member ScriptMethod Dispose { $this.Disposed = $true }
+      $script:identityBase = [PSCustomObject]@{ Disposed = $false }
+      $identityBase | Add-Member ScriptMethod OpenSubKey { $script:identityKey }
+      $identityBase | Add-Member ScriptMethod Dispose { $this.Disposed = $true }
+      Mock Open-PSFOfficeRegistryBase { $script:identityBase }
+
+      Get-PSFOfficeMachineId | Should -BeExactly $identityValue
+      $identityKey.Disposed | Should -BeTrue
+      $identityBase.Disposed | Should -BeTrue
+      Should -Invoke Open-PSFOfficeRegistryBase -Times 1 -Exactly -ParameterFilter {
+        $View -eq $(if ([Environment]::Is64BitOperatingSystem) { 'Registry64' } else { 'Registry32' })
+      }
+    }
+  }
+
+  It 'rejects unavailable identity without leaking native exception text' {
+    InModuleScope PSFoundation {
+      Mock Open-PSFOfficeRegistryBase { throw 'SENSITIVE native error' }
+      $failure = $null
+      try { Get-PSFOfficeMachineId } catch { $failure = $_ }
+      $failure.Exception.Data['OfficeReason'] | Should -Be MachineIdentityUnavailable
+      $failure.Exception.Message | Should -Not -Match SENSITIVE
+    }
+  }
+
+  It 'rejects <Case> identity and disposes opened handles' -ForEach @(
+    @{ Case = 'missing key'; Value = $null; MissingKey = $true }
+    @{ Case = 'missing value'; Value = $null; MissingKey = $false }
+    @{ Case = 'empty GUID'; Value = '00000000-0000-0000-0000-000000000000'; MissingKey = $false }
+    @{ Case = 'invalid value'; Value = 'not-a-guid'; MissingKey = $false }
+  ) {
+    InModuleScope PSFoundation -Parameters @{ Value = $Value; MissingKey = $MissingKey } {
+      param ($Value, $MissingKey)
+      $script:identityValue = $Value
+      $script:identityKey = [PSCustomObject]@{ Disposed = $false }
+      $identityKey | Add-Member ScriptMethod GetValue { $script:identityValue }
+      $identityKey | Add-Member ScriptMethod Dispose { $this.Disposed = $true }
+      $script:identityMissingKey = $MissingKey
+      $script:identityBase = [PSCustomObject]@{ Disposed = $false }
+      $identityBase | Add-Member ScriptMethod OpenSubKey { if (-not $script:identityMissingKey) { $script:identityKey } }
+      $identityBase | Add-Member ScriptMethod Dispose { $this.Disposed = $true }
+      Mock Open-PSFOfficeRegistryBase { $script:identityBase }
+      { Get-PSFOfficeMachineId } | Should -Throw '*identity*'
+      $identityBase.Disposed | Should -BeTrue
+      if (-not $MissingKey) { $identityKey.Disposed | Should -BeTrue }
+    }
+  }
+}
+
 Describe 'Imported Office nullable collections' {
   BeforeAll {
     Remove-Module -Name PSFoundation -Force -ErrorAction SilentlyContinue

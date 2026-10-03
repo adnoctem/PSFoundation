@@ -662,11 +662,43 @@ function Get-PSFOfficeFingerprint {
   }
 }
 
+function Open-PSFOfficeRegistryBase {
+  [CmdletBinding()]
+  param ([Microsoft.Win32.RegistryView]$View)
+
+  [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, $View)
+}
+
 function Get-PSFOfficeMachineId {
   [CmdletBinding()]
   param ()
 
-  (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid -ErrorAction Stop).MachineGuid
+  $view = [Microsoft.Win32.RegistryView]::Registry32
+  if ([Environment]::Is64BitOperatingSystem) { $view = [Microsoft.Win32.RegistryView]::Registry64 }
+  $base = $null
+  $key = $null
+  try {
+    $base = Open-PSFOfficeRegistryBase -View $view
+    $key = $base.OpenSubKey('SOFTWARE\Microsoft\Cryptography', $false)
+    if ($null -eq $key) {
+      Stop-PSFOfficeOperation MachineIdentityUnavailable "Machine identity key is missing in $view."
+    }
+    $identity = $key.GetValue('MachineGuid', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $parsed = [guid]::Empty
+    if ($identity -isnot [string] -or -not [guid]::TryParse($identity, [ref]$parsed) -or $parsed -eq [guid]::Empty) {
+      Stop-PSFOfficeOperation InvalidMachineIdentity "Machine identity (MachineGuid) is missing or invalid in $view."
+    }
+    # Return the original string: normalization would change existing journal bindings.
+    return $identity
+  }
+  catch {
+    if ($_.Exception.Data['OfficeReason']) { throw }
+    Stop-PSFOfficeOperation MachineIdentityUnavailable "Cannot read MachineGuid from HKLM\SOFTWARE\Microsoft\Cryptography ($view)."
+  }
+  finally {
+    if ($null -ne $key) { $key.Dispose() }
+    if ($null -ne $base) { $base.Dispose() }
+  }
 }
 
 function Get-PSFOfficeOsLocale {
