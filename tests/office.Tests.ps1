@@ -618,6 +618,28 @@ Describe 'Imported Office sparse registry values' {
     $plan.Blockers | Should -Contain StaleRemovalSelection
   }
 
+  It 'preserves <Case> exclusion evidence without assuming installed applications' -ForEach @(
+    @{ Case = 'absent'; Present = $false; Value = $null; Known = $false; Expected = @() }
+    @{ Case = 'null'; Present = $true; Value = $null; Known = $false; Expected = @() }
+    @{ Case = 'wrong type'; Present = $true; Value = 0; Known = $false; Expected = @() }
+    @{ Case = 'explicit empty'; Present = $true; Value = ''; Known = $true; Expected = @() }
+    @{ Case = 'normalized set'; Present = $true; Value = ' OneDrive,groove,GROOVE '; Known = $true; Expected = @('groove', 'onedrive') }
+  ) {
+    $script:sparseRegistry = Get-Content "$PSScriptRoot/fixtures/office/office2019-registry.json" -Raw | ConvertFrom-Json
+    $configuration = @($sparseRegistry | Where-Object { $_.Path -like '*ClickToRun\Configuration' })[0]
+    $configuration.Values.PSObject.Properties.Remove('Standard2019Volume.ExcludedApps')
+    if ($Present) { $configuration.Values | Add-Member NoteProperty 'Standard2019Volume.ExcludedApps' $Value }
+    $inventory = PSFoundation\Get-OfficeInventory
+    $actual = $inventory.Products[0]
+    ($null -ne $actual.ExcludeApp) | Should -Be $Known
+    if ($Known) { @($actual.ExcludeApp) | Should -Be $Expected }
+    $target = PSFoundation\New-OfficeDeploymentConfiguration -TargetProductId Standard2019Volume -Architecture 32 -Version 16.0.10417.20208 -Language de-de -ExcludeApp $Expected
+    $verification = PSFoundation\Test-OfficeDeployment -Configuration $target -Inventory $inventory
+    $verification.Compliant | Should -Be $Known
+    if (-not $Known) { $verification.Unknowns | Should -Contain ExcludeApp }
+    ($actual.Evidence -join ' ') | Should -Match ExcludeApp
+  }
+
   It 'reads the Office <Release> fixture through the strict imported module' -ForEach @(
     @{ Release = '2007'; MsiExpected = $true; ProductCount = 0; RelatedCount = 2 }
     @{ Release = '2019'; MsiExpected = $false; ProductCount = 1; RelatedCount = 5 }

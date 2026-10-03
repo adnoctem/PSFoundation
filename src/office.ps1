@@ -1384,8 +1384,10 @@ function Get-OfficeInventory {
           }
         }
         $excluded = $null
-        if ($values.ContainsKey("$id.ExcludedApps")) {
-          $excluded = @(([string]$values["$id.ExcludedApps"] -split ',') | Where-Object { $_ } | Sort-Object)
+        $exclusionEvidence = 'ExcludeApp unknown: registration is missing or not a string'
+        if ($values.ContainsKey("$id.ExcludedApps") -and $values["$id.ExcludedApps"] -is [string]) {
+          $excluded = @(($values["$id.ExcludedApps"] -split ',') | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ } | Sort-Object -Unique)
+          $exclusionEvidence = "ExcludeApp from $($record.View):$($record.Path) value $id.ExcludedApps"
         }
         # These are registered candidates, not proof of complete installed UI
         # resources or the initial shell language. Ignore inactive configurations.
@@ -1445,7 +1447,8 @@ function Get-OfficeInventory {
               "Telemetry VersionToReport=$($values['VersionToReport']); not installation evidence",
               "ClientCulture=$($values['ClientCulture']); not proof of complete languages or shell UI",
               $languageEvidence,
-              $primaryEvidence
+              $primaryEvidence,
+              $exclusionEvidence
             )
           })
       }
