@@ -6,27 +6,37 @@
     <h1 align="center">PSFoundation</h1>
 </p>
 
+> [!WARNING]
+>
+> **PSFoundation is frozen and no longer maintained.** No further features, bug fixes, security updates, or releases will be provided.
+> Migrate to [substrate][substrate], the open-source successor. This repository preserves the legacy PowerShell implementation for
+> historical reference.
+
+[![Project status: frozen](https://img.shields.io/badge/status-frozen-lightgrey)](#migrate-to-substrate)
 [![License](https://img.shields.io/github/license/adnoctem/PSFoundation?label=License)][license]
 [![Language](https://img.shields.io/github/languages/top/adnoctem/PSFoundation?label=PowerShell)][powershell]
 [![PSGallery Version](https://img.shields.io/powershellgallery/v/PSFoundation)][psgallery_package]
 [![CI Status](https://github.com/adnoctem/PSFoundation/actions/workflows/testing.yaml/badge.svg)][testing_workflow]
 [![GitHub Release](https://img.shields.io/github/v/release/adnoctem/PSFoundation?label=Release)][github_releases]
-[![GitHub Activity](https://img.shields.io/github/commit-activity/m/adnoctem/PSFoundation?label=Commits)][github_commits]
-[![Semantic Release](https://img.shields.io/badge/Semantic_Release-enabled-brightgreen?logo=semanticrelease&logoColor=E5E4E7)][semantic_release]
-[![Renovate](https://img.shields.io/badge/Renovate-enabled-brightgreen?logo=renovate&logoColor=1A1F6C)][renovate]
-[![PreCommit](https://img.shields.io/badge/PreCommit-enabled-brightgreen?logo=precommit&logoColor=FAB040)][precommit]
-[![Super-Linter](https://github.com/adnoctem/PSFoundation/actions/workflows/superlint.yaml/badge.svg)][superlinter_action]
 
-`PSFoundation` is an open-source [MIT][license]-licensed [PowerShell][powershell] module library written and maintained by the [Ad Noctem
-Collective][org] for Windows system administration, configuration management, and automation. The module targets both desktop Windows
-installations and Windows Server environments and supports [PowerShell][powershell] 5.1 and above, including Windows PowerShell 5.1 as well
-as newer PowerShell 7+ releases. It is published to the [PowerShell Gallery][psgallery_package] for easy discovery and installation.
+`PSFoundation` is an open-source [MIT][license]-licensed Windows administration library and [PowerShell][powershell] module from the [Ad
+Noctem Collective][org]. Existing releases remain available on the [PowerShell Gallery][psgallery_package]; active development has moved to
+[substrate][substrate].
 
 The [`src`](src) directory contains the module source code — a collection of PowerShell functions organized by domain (registry, networking,
 security, packages, system, etc.) — bundled together as a single importable module. The [`tools`](tools) directory contains the repository's
 development tooling for building, formatting, linting, testing, and publishing the module.
 
-### Module Coverage
+## Migrate to substrate
+
+Current substrate versions provide a one-to-one match for PSFoundation's PowerShell API through **`AdNoctem.Substrate.PowerShell`**, also
+published on [NuGet][substrate_powershell_nuget]. Existing PowerShell callers can retain their command usage while replacing their
+PSFoundation dependency and module import with the substrate adapter.
+
+See [MIGRATION.md](MIGRATION.md) for installation, compatibility, and the history of the rewrite. Direct new development, issues, and
+contributions to [substrate][substrate].
+
+## Historical module coverage
 
 PSFoundation provides functions across these domains:
 
@@ -51,7 +61,9 @@ PSFoundation provides functions across these domains:
 | `updates.ps1`      | Windows Update and Microsoft Store update management                                                                           |
 | `user.ps1`         | User and SID information, AD credential validation, lockout source and FSMO reporting                                          |
 
-## TL;DR
+## Historical development workflow
+
+The following instructions and API notes describe the frozen legacy source. They are retained for reproducibility and reference.
 
 ```pwsh
 # Install from PowerShell Gallery
@@ -504,14 +516,13 @@ the elevated child finishes; it is intended for entry-point scripts.
 
 ### Contributing
 
-Contributions are welcome via GitHub's Pull Requests. Fork the repository and implement your changes within the forked repository, after
-that you may submit a [Pull Request][gh_pr_fork_docs]. Refer to our [documentation for contributors][contributing] for contributing
-guidelines, commit message formats and versioning tips.
+PSFoundation is closed to further development. Please direct contributions and issue reports to [substrate][substrate]. The [historical
+contributor guide][contributing] remains available for reproducing and auditing this source tree.
 
 ### Maintainers
 
-This project is owned and maintained by [Ad Noctem Collective](https://github.com/adnoctem) refer to the [`AUTHORS`][authors] or
-[`CODEOWNERS`][owners] for more information. You may also use the linked contact details to reach out directly.
+PSFoundation was developed by the [Ad Noctem Collective][org]. The [`AUTHORS`][authors] and [`CODEOWNERS`][owners] files record the
+project's contributors and ownership. Ongoing maintenance and development are in [substrate][substrate].
 
 ### Copyright
 
@@ -529,16 +540,8 @@ _Assets provided by:_ **[Microsoft Corporation][microsoft]**
 [org]: https://github.com/adnoctem
 [microsoft]: https://www.microsoft.com/
 [powershell]: https://github.com/PowerShell/PowerShell
-[gh_pr_fork_docs]:
-  https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork
+[substrate]: https://github.com/adnoctem/substrate
+[substrate_powershell_nuget]: https://www.nuget.org/packages/AdNoctem.Substrate.PowerShell
 [github_releases]: https://github.com/adnoctem/PSFoundation/releases
-[github_commits]: https://github.com/adnoctem/PSFoundation/commits/main/
 [psgallery_package]: https://www.powershellgallery.com/packages/PSFoundation
 [testing_workflow]: https://github.com/adnoctem/PSFoundation/actions/workflows/testing.yaml
-
-<!-- Third-party -->
-
-[semantic_release]: https://semantic-release.org/
-[renovate]: https://renovatebot.com/
-[precommit]: https://pre-commit.com/
-[superlinter_action]: https://github.com/marketplace/actions/super-linter
